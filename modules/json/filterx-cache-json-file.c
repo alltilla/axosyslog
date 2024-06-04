@@ -137,6 +137,8 @@ _eval(FilterXExpr *s)
 {
   FilterXFuntionCacheJsonFile *self = (FilterXFuntionCacheJsonFile *) s;
 
+  g_assert_not_reached();
+
   return filterx_object_ref(self->cached_json);
 }
 
