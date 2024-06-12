@@ -9,7 +9,7 @@ on:
       platforms:
         required: false
         type: string
-        default: linux/amd64,linux/arm64,linux/arm/v7
+        default: linux/amd64
       snapshot-tarball-artifact:
         required: false
         type: string
@@ -21,7 +21,7 @@ on:
         type: string
 
 env:
-  DEBUG_PLATFORM: linux/amd64
+  DEBUG_PLATFORM: linux/amd64,linux/arm64,linux/arm/v7
 
 jobs:
   prepare:
@@ -193,6 +193,7 @@ jobs:
           context: docker
           file: docker/alpine.dockerfile
           platforms: ${{ env.DEBUG_PLATFORM }}
+          outputs: type=image,name=${{ needs.prepare.outputs.image-name }},push-by-digest=true,name-canonical=true,push=true,annotation-index.org.opencontainers.image.description=test }}
           push: true
           tags: ${{ steps.tags.outputs.DEBUG_TAGS }}
           build-args: |
