@@ -104,6 +104,7 @@ jobs:
           build-args: |
             PKG_TYPE=${{ inputs.type }}
             SNAPSHOT_VERSION=${{ inputs.snapshot-version }}
+            DEBUG=true
 
       - name: Export digest
         env:
