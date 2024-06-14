@@ -24,4 +24,11 @@
 #ifndef METRICS_PROBE_FILTERX_H_INCLUDED
 #define METRICS_PROBE_FILTERX_H_INCLUDED
 
+#include "filterx/expr-function.h"
+
+FILTERX_FUNCTION_DECLARE(metrics_probe);
+
+FilterXFunction *filterx_function_metrics_probe_new(const gchar *function_name, FilterXFunctionArgs *args,
+                                                    GError **error);
+
 #endif
