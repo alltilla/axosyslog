@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2023 shifter
+ * Copyright (c) 2024 Axoflow
+ * Copyright (c) 2023 Attila Szakacs <attila.szakacs@axoflow.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -103,6 +105,27 @@ FilterXExpr *filterx_function_lookup(GlobalConfig *cfg, const gchar *function_na
     .type = LL_CONTEXT_FILTERX_SIMPLE_FUNC,            \
     .name = # func_name,                                 \
     .construct = filterx_ ## func_name ## _construct,  \
+  }
+
+#define FILTERX_FUNCTION_PROTOTYPE(func_name)                \
+  gpointer                                                   \
+  filterx_function_ ## func_name ## _construct(Plugin *self)
+
+#define FILTERX_FUNCTION_DECLARE(func_name) \
+  FILTERX_FUNCTION_PROTOTYPE(func_name);
+
+#define FILTERX_FUNCTION(func_name, ctor) \
+  FILTERX_FUNCTION_PROTOTYPE(func_name)   \
+  {                                       \
+    FilterXFunctionCtor f = ctor;         \
+    return (gpointer) f;                  \
+  }
+
+#define FILTERX_FUNCTION_PLUGIN(func_name)                     \
+  {                                                            \
+    .type = LL_CONTEXT_FILTERX_FUNC,                           \
+    .name = # func_name,                                       \
+    .construct = filterx_function_ ## func_name ## _construct, \
   }
 
 #endif
