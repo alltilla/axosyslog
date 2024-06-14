@@ -19,6 +19,8 @@ set(FILTERX_HEADERS
     filterx/filterx-pipe.h
     filterx/filterx-scope.h
     filterx/filterx-weakrefs.h
+    filterx/filterx-metrics.h
+    filterx/filterx-metrics-labels.h
     filterx/object-datetime.h
     filterx/object-json.h
     filterx/object-json-internal.h
@@ -65,6 +67,8 @@ set(FILTERX_SOURCES
     filterx/filterx-pipe.c
     filterx/filterx-scope.c
     filterx/filterx-weakrefs.c
+    filterx/filterx-metrics.c
+    filterx/filterx-metrics-labels.c
     filterx/object-datetime.c
     filterx/object-json.c
     filterx/object-json-object.c

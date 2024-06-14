@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2024 Attila Szakacs
+ * Copyright (c) 2024 Axoflow
+ * Copyright (c) 2024 Attila Szakacs <attila.szakacs@axoflow.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,26 +22,18 @@
  *
  */
 
-#ifndef FILTERX_EXPR_GENERATOR_H_INCLUDED
-#define FILTERX_EXPR_GENERATOR_H_INCLUDED
+#ifndef FILTERX_METRICS_H_INCLUDED
+#define FILTERX_METRICS_H_INCLUDED
 
-#include "filterx/filterx-expr.h"
+#include "filterx-expr.h"
+#include "stats/stats-counter.h"
 
-typedef struct FilterXExprGenerator_ FilterXExprGenerator;
-struct FilterXExprGenerator_
-{
-  FilterXExpr super;
-  FilterXExpr *fillable;
-  gboolean (*generate)(FilterXExprGenerator *self, FilterXObject *fillable);
-  FilterXObject *(*create_container)(FilterXExprGenerator *self, FilterXExpr *fillable_parent);
-};
+typedef struct _FilterXMetrics FilterXMetrics;
 
-void filterx_generator_set_fillable(FilterXExpr *s, FilterXExpr *fillable);
-void filterx_generator_init_instance(FilterXExpr *s);
-void filterx_generator_free_method(FilterXExpr *s);
+gboolean filterx_metrics_is_enabled(FilterXMetrics *self);
+StatsCounterItem *filterx_metrics_get_stats_counter(FilterXMetrics *self);
 
-FilterXExpr *filterx_generator_create_container_new(FilterXExpr *g, FilterXExpr *fillable_parent);
-
-gboolean filterx_expr_is_generator(FilterXExpr *s);
+FilterXMetrics *filterx_metrics_new(gint level, FilterXExpr *key, FilterXExpr *labels, GError **error);
+void filterx_metrics_free(FilterXMetrics *self);
 
 #endif

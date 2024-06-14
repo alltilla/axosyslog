@@ -142,6 +142,11 @@ metrics_tls_cache_get_labels_len(void)
 }
 
 void
+metrics_tls_cache_sort_labels(void)
+{
+}
+
+void
 metrics_tls_cache_global_init(void)
 {
   register_application_thread_init_hook(_init_tls_clusters_map_thread_init_hook, NULL);

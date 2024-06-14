@@ -103,3 +103,9 @@ filterx_generator_create_container_new(FilterXExpr *g, FilterXExpr *fillable_par
 
   return &self->super;
 }
+
+gboolean
+filterx_expr_is_generator(FilterXExpr *s)
+{
+  return s->eval == _eval;
+}
