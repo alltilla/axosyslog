@@ -26,13 +26,15 @@
 #define FILTERX_METRICS_LABELS_H_INCLUDED
 
 #include "filterx-expr.h"
+#include "metrics/dyn-metrics-store.h"
 
 typedef struct _FilterXMetricsLabels FilterXMetricsLabels;
 
 FilterXMetricsLabels *filterx_metrics_labels_new(FilterXExpr *labels);
 void filterx_metrics_labels_free(FilterXMetricsLabels *self);
 
-gboolean filterx_metrics_labels_format(FilterXMetricsLabels *self, StatsClusterLabel **labels, gsize *len);
+gboolean filterx_metrics_labels_format(FilterXMetricsLabels *self, DynMetricsStore *store,
+                                       StatsClusterLabel **labels, gsize *len);
 gboolean filterx_metrics_labels_is_const(FilterXMetricsLabels *self);
 
 #endif
