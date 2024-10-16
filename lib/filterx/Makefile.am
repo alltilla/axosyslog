@@ -32,6 +32,7 @@ filterxinclude_HEADERS = 			\
 	lib/filterx/object-message-value.h	\
 	lib/filterx/object-list-interface.h	\
 	lib/filterx/object-dict-interface.h	\
+	lib/filterx/object-metrics-labels.h		\
 	lib/filterx/filterx-config.h		\
 	lib/filterx/filterx-pipe.h		\
 	lib/filterx/filterx-metrics.h		\
@@ -91,6 +92,7 @@ filterx_sources = 				\
 	lib/filterx/object-message-value.c	\
 	lib/filterx/object-list-interface.c	\
 	lib/filterx/object-dict-interface.c	\
+	lib/filterx/object-metrics-labels.c		\
 	lib/filterx/filterx-config.c		\
 	lib/filterx/filterx-pipe.c		\
 	lib/filterx/filterx-metrics.c		\

@@ -10,6 +10,7 @@ lib_filterx_tests_TESTS		 =              \
 		lib/filterx/tests/test_object_boolean	\
 		lib/filterx/tests/test_object_integer	\
 		lib/filterx/tests/test_object_bytes	\
+		lib/filterx/tests/test_object_metrics_labels	\
 		lib/filterx/tests/test_filterx_expr	\
 		lib/filterx/tests/test_expr_function	\
 		lib/filterx/tests/test_expr_comparison \
@@ -79,6 +80,9 @@ lib_filterx_tests_test_object_integer_LDADD   = $(TEST_LDADD) $(JSON_LIBS)
 
 lib_filterx_tests_test_object_double_CFLAGS  = $(TEST_CFLAGS)
 lib_filterx_tests_test_object_double_LDADD   = $(TEST_LDADD) $(JSON_LIBS)
+
+lib_filterx_tests_test_object_metrics_labels_CFLAGS  = $(TEST_CFLAGS)
+lib_filterx_tests_test_object_metrics_labels_LDADD   = $(TEST_LDADD) $(JSON_LIBS)
 
 lib_filterx_tests_test_type_registry_CFLAGS  = $(TEST_CFLAGS)
 lib_filterx_tests_test_type_registry_LDADD   = $(TEST_LDADD) $(JSON_LIBS)
