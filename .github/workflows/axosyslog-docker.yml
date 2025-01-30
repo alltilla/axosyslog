@@ -231,15 +231,15 @@ jobs:
           name: ${{ inputs.snapshot-tarball-artifact }}
           path: docker/apkbuild/axoflow/axosyslog
 
-      - name: Build and push debug Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: docker
-          file: docker/alpine.dockerfile
-          platforms: ${{ env.DEBUG_PLATFORM }}
-          push: true
-          tags: ${{ steps.tags.outputs.DEBUG_TAGS }}
-          build-args: |
-            PKG_TYPE=${{ inputs.type }}
-            SNAPSHOT_VERSION=${{ inputs.snapshot-version }}
-            DEBUG=true
+      # - name: Build and push debug Docker image
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: docker
+      #     file: docker/alpine.dockerfile
+      #     platforms: ${{ env.DEBUG_PLATFORM }}
+      #     push: true
+      #     tags: ${{ steps.tags.outputs.DEBUG_TAGS }}
+      #     build-args: |
+      #       PKG_TYPE=${{ inputs.type }}
+      #       SNAPSHOT_VERSION=${{ inputs.snapshot-version }}
+      #       DEBUG=true

@@ -177,6 +177,14 @@ AzureMonitorAuthenticator::parse_token_and_expiry_from_response(const std::strin
       return false;
     }
 
+  for (const auto &elem : *json.u_.object_)
+    {
+      msg_error("asd",
+                evt_tag_str("key", elem.first.c_str()),
+                evt_tag_str("value", elem.second.to_str().c_str()),
+                evt_tag_int("type", elem.second.type_));
+    }
+
   if (!json.is<picojson::object>() || !json.contains("access_token") || !json.contains("expires_in"))
     {
       msg_error("cloud_auth::azure::AzureMonitorAuthenticator: "
