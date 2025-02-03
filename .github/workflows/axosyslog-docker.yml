@@ -48,7 +48,7 @@ jobs:
 
 
   image-build:
-    if: github.repository_owner == 'axoflow' || github.event_name != 'schedule'
+    # if: github.repository_owner == 'axoflow' || github.event_name != 'schedule'
     runs-on: ${{ matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs: prepare
 

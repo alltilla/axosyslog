@@ -42,7 +42,7 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    if: github.repository_owner == 'axoflow'
+    # if: github.repository_owner == 'axoflow'
 
     strategy:
       matrix:
