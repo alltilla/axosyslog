@@ -66,3 +66,7 @@ jobs:
       - name: Publish release distributions to PyPI
         # https://github.com/pypa/gh-action-pypi-publish/tree/release/v1.12
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc
+        # TODO: remove for real PyPi release
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
