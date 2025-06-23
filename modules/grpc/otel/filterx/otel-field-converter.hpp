@@ -20,8 +20,8 @@
  *
  */
 
-#ifndef OTEL_FIELD_HPP
-#define OTEL_FIELD_HPP
+#ifndef OTEL_FIELD_CONVERTER_HPP
+#define OTEL_FIELD_CONVERTER_HPP
 
 #include "syslog-ng.h"
 #include "filterx/protobuf-field-converter.hpp"
@@ -39,23 +39,23 @@ namespace otel {
 using namespace google::protobuf;
 using opentelemetry::proto::logs::v1::LogRecord;
 
-class AnyValueFieldConverter : public ProtobufFieldConverter
+class AnyValueFieldConverter : public SingleProtobufFieldConverter
 {
   using AnyValue = opentelemetry::proto::common::v1::AnyValue;
 
 public:
   FilterXObject *get(Message *message, ProtoReflectors reflectors);
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object);
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object);
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object);
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object);
 
   FilterXObject *direct_get(AnyValue *any_value);
-  bool direct_set(AnyValue *any_value, FilterXObject *object, FilterXObject **assoc_object);
+  void direct_set(AnyValue *any_value, FilterXObject *object, FilterXObject **assoc_object);
 };
 
 extern AnyValueFieldConverter any_value_field;
 
-ProtobufFieldConverter *get_otel_protobuf_field_converter(FieldDescriptor::Type field_type);
-ProtobufFieldConverter *get_otel_protobuf_field_converter(const FieldDescriptor *fd);
+SingleProtobufFieldConverter *get_otel_protobuf_field_converter(FieldDescriptor::Type field_type);
+SingleProtobufFieldConverter *get_otel_protobuf_field_converter(const FieldDescriptor *fd);
 
 bool iter_on_otel_protobuf_message_fields(google::protobuf::Message &message, FilterXDictIterFunc func,
                                           void *user_data);

@@ -67,8 +67,47 @@ double_to_float_safe(double val)
 
 /* C++ Implementations */
 
-// ProtoReflectors reflectors
-class BoolFieldConverter : public ProtobufFieldConverter
+void
+SingleProtobufFieldConverter::set_repeated(google::protobuf::Message *message, ProtoReflectors reflectors,
+                                           FilterXObject *object, FilterXObject **assoc_object)
+{
+  if (!reflectors.field_descriptor->is_repeated())
+    throw ProtobufFieldConverter::ProtobufFieldConverter::SetException(reflectors, "Field is not a repeated field");
+
+  FilterXObject *list = filterx_ref_unwrap_ro(object);
+  if (!filterx_object_is_type(list, &FILTERX_TYPE_NAME(list)))
+    throw ProtobufFieldConverter::ProtobufFieldConverter::SetException(
+      reflectors, "Expected a list object for repeated field, got: " + std::string(list->type->name)
+    );
+
+  reflectors.reflection->ClearField(message, reflectors.field_descriptor);
+
+  guint64 len;
+  g_assert(filterx_object_len(list, &len));
+
+  for (gsize i = 0; i < len; i++)
+    {
+      FilterXObject *elem = filterx_list_get_subscript(list, i);
+
+      try
+        {
+          this->add(message, reflectors, elem);
+        }
+      catch (const ProtobufFieldConverter::ProtobufFieldConverter::AddException &)
+        {
+          filterx_object_unref(elem);
+          throw;
+        }
+
+      filterx_object_unref(elem);
+    }
+
+  *assoc_object = filterx_object_ref(object);
+}
+
+ProtobufFieldConverter syslogng::grpc::protobuf_field_converter;
+
+class BoolFieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static gboolean extract(FilterXObject *object)
@@ -82,20 +121,18 @@ public:
     return filterx_boolean_new(reflectors.reflection->GetBool(*message, reflectors.field_descriptor));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     reflectors.reflection->SetBool(message, reflectors.field_descriptor, this->extract(object));
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     reflectors.reflection->AddBool(message, reflectors.field_descriptor, this->extract(object));
-    return true;
   }
 };
 
-class i32FieldConverter : public ProtobufFieldConverter
+class i32FieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static int32_t extract(FilterXObject *object)
@@ -103,45 +140,42 @@ private:
     gint64 i;
     if (filterx_object_extract_integer(object, &i))
       return MAX(INT32_MIN, MIN(INT32_MAX, i));
-    throw std::runtime_error("i32FieldConverter: unsupported type");
+
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "integer");
   }
 
-public:
+  public:
   FilterXObject *get(Message *message, ProtoReflectors reflectors)
   {
-    return filterx_integer_new(gint32(reflectors.reflection->GetInt32(*message, reflectors.field_descriptor)));
+    return filterx_integer_new(gint64(reflectors.reflection->GetInt64(*message, reflectors.field_descriptor)));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetInt32(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddInt32(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
-class i64FieldConverter : public ProtobufFieldConverter
+class i64FieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static int64_t extract(FilterXObject *object)
@@ -152,9 +186,9 @@ private:
 
     UnixTime utime;
     if (filterx_object_extract_datetime(object, &utime))
-      return (int64_t)unix_time_to_unix_epoch_usec(utime);
+      return (int64_t) unix_time_to_unix_epoch_usec(utime);
 
-    throw std::runtime_error("i64FieldConverter: unsupported type");
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "integer or datetime");
   }
 
 public:
@@ -163,36 +197,32 @@ public:
     return filterx_integer_new(gint64(reflectors.reflection->GetInt64(*message, reflectors.field_descriptor)));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetInt64(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddInt64(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
-class u32FieldConverter : public ProtobufFieldConverter
+class u32FieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static uint32_t extract(FilterXObject *object)
@@ -200,7 +230,8 @@ private:
     gint64 i;
     if (filterx_object_extract_integer(object, &i))
       return MAX(0, MIN(UINT32_MAX, i));
-    throw std::runtime_error("u32FieldConverter: unsupported type");
+
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "integer");
   }
 
 public:
@@ -209,36 +240,32 @@ public:
     return filterx_integer_new(guint32(reflectors.reflection->GetUInt32(*message, reflectors.field_descriptor)));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetUInt32(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddUInt32(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
-class u64FieldConverter : public ProtobufFieldConverter
+class u64FieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static uint64_t extract(FilterXObject *object)
@@ -246,7 +273,7 @@ private:
     gint64 i;
     if (filterx_object_extract_integer(object, &i))
       return MAX(0, MIN(UINT64_MAX, (uint64_t)i));
-    throw std::runtime_error("u64FieldConverter: unsupported type");
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "integer");
   }
 
 public:
@@ -254,47 +281,38 @@ public:
   {
     uint64_t val = reflectors.reflection->GetUInt64(*message, reflectors.field_descriptor);
     if (val > INT64_MAX)
-      {
-        msg_error("protobuf-field: exceeding FilterX number value range",
-                  evt_tag_str("field", reflectors.field_descriptor->name().data()),
-                  evt_tag_long("range_min", INT64_MIN),
-                  evt_tag_long("range_max", INT64_MAX),
-                  evt_tag_printf("current", "%" G_GUINT64_FORMAT, val));
-        return NULL;
-      }
+      throw ProtobufFieldConverter::GetException(reflectors,
+                         std::string("Field value exceeds FilterX integer value range: ") +
+                         std::to_string(val) + " > " + std::to_string(INT64_MAX));
     return filterx_integer_new(guint64(val));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetUInt64(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddUInt64(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
-class StringFieldConverter : public ProtobufFieldConverter
+class StringFieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static std::string extract(FilterXObject *object, ProtoReflectors reflectors)
@@ -318,11 +336,11 @@ private:
       {
         GString *repr = scratch_buffers_alloc();
         if (!filterx_object_to_json(object, repr))
-          throw std::runtime_error("StringFieldConverter: json marshal error");
+          throw std::runtime_error("JSON serialization error");
         return std::string(repr->str, repr->len);
       }
 
-    throw std::runtime_error("StringFieldConverter: unsupported type");
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "string, dict or list");
   }
 
 public:
@@ -334,36 +352,40 @@ public:
     return filterx_string_new(bytes_ref.c_str(), bytes_ref.length());
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetString(message, reflectors.field_descriptor, this->extract(object, reflectors));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
+    catch (const std::runtime_error &e)
+      {
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
+      }
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddString(message, reflectors.field_descriptor, this->extract(object, reflectors));
       }
-    catch (const std::exception &e)
+      catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
+    catch (const std::runtime_error &e)
+      {
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
+      }
   }
 };
 
-class DoubleFieldConverter : public ProtobufFieldConverter
+class DoubleFieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static double extract(FilterXObject *object)
@@ -376,7 +398,7 @@ private:
     if (filterx_object_extract_double(object, &d))
       return d;
 
-    throw std::runtime_error("DoubleFieldConverter: unsupported type");
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "integer or double");
   }
 
 public:
@@ -385,36 +407,32 @@ public:
     return filterx_double_new(gdouble(reflectors.reflection->GetDouble(*message, reflectors.field_descriptor)));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetDouble(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddDouble(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+      catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
-class FloatFieldConverter : public ProtobufFieldConverter
+class FloatFieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static float extract(FilterXObject *object)
@@ -427,7 +445,7 @@ private:
     if (filterx_object_extract_double(object, &d))
       return double_to_float_safe(d);
 
-    throw std::runtime_error("FloatFieldConverter: unsupported type");
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "integer or double");
   }
 
 public:
@@ -436,36 +454,32 @@ public:
     return filterx_double_new(gdouble(reflectors.reflection->GetFloat(*message, reflectors.field_descriptor)));
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetFloat(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddFloat(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
-class BytesFieldConverter : public ProtobufFieldConverter
+class BytesFieldConverter : public SingleProtobufFieldConverter
 {
 private:
   static std::string extract(FilterXObject *object)
@@ -477,7 +491,7 @@ private:
         filterx_object_extract_protobuf_ref(object, &str, &len))
       return std::string{str, len};
 
-    throw std::runtime_error("BytesFieldConverter: unsupported type");
+    throw ProtobufFieldConverter::TypeNotSupportedException(object, "bytes or protobuf");
   }
 
 public:
@@ -489,76 +503,81 @@ public:
     return filterx_bytes_new(bytes_ref.c_str(), bytes_ref.length());
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     try
       {
         reflectors.reflection->SetString(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::SetException(reflectors, e.what());
       }
-    return true;
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     try
       {
         reflectors.reflection->AddString(message, reflectors.field_descriptor, this->extract(object));
       }
-    catch (const std::exception &e)
+    catch (const ProtobufFieldConverter::TypeNotSupportedException &e)
       {
-        log_type_error(reflectors, object->type->name);
-        return false;
+        throw ProtobufFieldConverter::AddException(reflectors, e.what());
       }
-    return true;
   }
 };
 
 FilterXObject *
 MapFieldConverter::get(Message *message, ProtoReflectors reflectors)
 {
-  const gchar *key_name = "key";
-  const gchar *value_name = "value";
-
   FilterXObject *dict = filterx_dict_new();
+  FilterXObject *key_object = nullptr, *value_object = nullptr;
 
-  int len = reflectors.reflection->FieldSize(*message, reflectors.field_descriptor);
-  for (int i = 0; i < len; i++)
+  try
     {
-      Message *elem_message = reflectors.reflection->MutableRepeatedMessage(message, reflectors.field_descriptor, i);
-      ProtoReflectors key_reflectors(*elem_message, key_name);
-      ProtoReflectors value_reflectors(*elem_message, value_name);
-
-      ProtobufFieldConverter *key_converter = get_protobuf_field_converter(key_reflectors.field_type);
-      ProtobufFieldConverter *value_converter = get_protobuf_field_converter(value_reflectors.field_type);
-
-      FilterXObject *key_object = key_converter->get(elem_message, key_name);
-      if (!key_object)
-        return NULL;
-
-      FilterXObject *value_object = value_converter->get(elem_message, value_name);
-      if (!value_object)
+      int len = reflectors.reflection->FieldSize(*message, reflectors.field_descriptor);
+      for (int i = 0; i < len; i++)
         {
-          filterx_object_unref(key_object);
-          return NULL;
-        }
+          Message *elem_message = reflectors.reflection->MutableRepeatedMessage(message, reflectors.field_descriptor, i);
 
-      if (!filterx_object_set_subscript(dict, key_object, &value_object))
-        {
+          try
+            {
+              key_object = protobuf_field_converter.get(elem_message, "key");
+            }
+          catch (const ProtobufFieldConverter::GetException &e)
+            {
+              std::throw_with_nested(ProtobufFieldConverter::GetException(reflectors, "Failed to convert map key"));
+            }
+
+          try
+            {
+              value_object = protobuf_field_converter.get(elem_message, "value");
+            }
+          catch (const ProtobufFieldConverter::GetException &e)
+            {
+              std::throw_with_nested(ProtobufFieldConverter::GetException(reflectors, "Failed to convert map value"));
+            }
+
+          if (!filterx_object_set_subscript(dict, key_object, &value_object))
+            {
+              throw ProtobufFieldConverter::GetException(reflectors, "Failed to set element of FilterX dict");
+            }
+
           filterx_object_unref(key_object);
           filterx_object_unref(value_object);
-          return NULL;
+          key_object = value_object = nullptr;
         }
-
-      filterx_object_unref(key_object);
+    }
+  catch (...)
+    {
       filterx_object_unref(value_object);
+      filterx_object_unref(key_object);
+      filterx_object_unref(dict);
+      throw;
     }
 
-  return dict;
+    return dict;
 }
 
 static gboolean
@@ -567,56 +586,42 @@ _map_add_elem(FilterXObject *key, FilterXObject *value, gpointer user_data)
   google::protobuf::Message *message = static_cast<google::protobuf::Message *>(((gpointer *) user_data)[0]);
   ProtoReflectors *reflectors = static_cast<ProtoReflectors *>(((gpointer *) user_data)[1]);
 
-  const gchar *key_name = "key";
-  const gchar *value_name = "value";
+  Message *elem_message = reflectors->reflection->AddMessage(message, reflectors->field_descriptor);
 
   try
     {
-      Message *elem_message = reflectors->reflection->AddMessage(message, reflectors->field_descriptor);
-      ProtoReflectors key_reflectors(*elem_message, key_name);
-      ProtoReflectors value_reflectors(*elem_message, value_name);
-
-      ProtobufFieldConverter *key_converter = get_protobuf_field_converter(key_reflectors.field_type);
-      ProtobufFieldConverter *value_converter = get_protobuf_field_converter(value_reflectors.field_type);
-
-      FilterXObject *assoc_key_object = NULL;
-      if (!key_converter->set(elem_message, key_name, key, &assoc_key_object))
-        return FALSE;
-
-      filterx_object_unref(assoc_key_object);
-
-      FilterXObject *assoc_val_object = NULL;
-      if (!value_converter->set(elem_message, value_name, value, &assoc_val_object))
-        return FALSE;
-
-      filterx_object_unref(assoc_val_object);
+      protobuf_field_converter.set(elem_message, "key", key);
     }
-  catch (const std::exception &e)
+  catch (const ProtobufFieldConverter::SetException &e)
     {
-      return FALSE;
+      std::throw_with_nested(ProtobufFieldConverter::SetException(*reflectors, "Failed to convert map key"));
+    }
+
+  try
+    {
+      protobuf_field_converter.set(elem_message, "value", value);
+    }
+  catch (const ProtobufFieldConverter::SetException &e)
+    {
+      std::throw_with_nested(ProtobufFieldConverter::SetException(*reflectors, "Failed to convert map value"));
     }
 
   return TRUE;
 }
 
-bool
-MapFieldConverter::set_repeated(Message *message, const std::string &field_name, FilterXObject *object,
+void
+MapFieldConverter::set_repeated(Message *message, ProtoReflectors reflectors, FilterXObject *object,
                                 FilterXObject **assoc_object)
 {
-  ProtoReflectors reflectors(*message, field_name);
-
   FilterXObject *dict = filterx_ref_unwrap_ro(object);
   if (!filterx_object_is_type(dict, &FILTERX_TYPE_NAME(dict)))
-    {
-      log_type_error(reflectors, object->type->name);
-      return false;
-    }
+    throw ProtobufFieldConverter::SetException(reflectors, "Expected a dict object for map field, got: " + std::string(dict->type->name));
 
   gpointer user_data[] = { message, &reflectors };
-  return filterx_dict_iter(dict, _map_add_elem, user_data);
+  filterx_dict_iter(dict, _map_add_elem, user_data);
 }
 
-bool
+void
 MapFieldConverter::set(Message *message, ProtoReflectors reflectors, FilterXObject *object,
                        FilterXObject **assoc_object)
 {
@@ -624,7 +629,7 @@ MapFieldConverter::set(Message *message, ProtoReflectors reflectors, FilterXObje
   g_assert_not_reached();
 }
 
-bool
+void
 MapFieldConverter::add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
 {
   /* Map has its own set_repeated implementation. */
@@ -634,42 +639,22 @@ MapFieldConverter::add(Message *message, ProtoReflectors reflectors, FilterXObje
 static gboolean
 _message_add_elem(FilterXObject *key, FilterXObject *value, gpointer user_data)
 {
-  google::protobuf::Message *message = static_cast<google::protobuf::Message *>(user_data);
-
-  const gchar *key_c_str;
-  gsize key_len;
-  if (!filterx_object_extract_string_ref(key, &key_c_str, &key_len))
-    return FALSE;
-
-  std::string key_string{key_c_str, key_len};
+  google::protobuf::Message *message = static_cast<google::protobuf::Message *>(((gpointer *) user_data)[0]);
+  ProtoReflectors *reflectors = static_cast<ProtoReflectors *>(((gpointer *) user_data)[1]);
 
   try
     {
-      ProtoReflectors elem_reflectors(*message, key_string);
-      ProtobufFieldConverter *converter = get_protobuf_field_converter(elem_reflectors.field_type);
-
-      FilterXObject *assoc_key_object = NULL;
-      if (!converter->set(message, key_string, value, &assoc_key_object))
-        {
-          filterx_object_unref(assoc_key_object);
-          return FALSE;
-        }
-
-      filterx_object_unref(assoc_key_object);
+      protobuf_field_converter.set(message, key, value);
     }
-  catch (const std::exception &e)
+  catch (const ProtobufFieldConverter::SetException &e)
     {
-      msg_error("protobuf-field: Failed to add element to message field",
-                evt_tag_str("key", key_string.c_str()),
-                evt_tag_str("value", value->type->name),
-                evt_tag_str("error", e.what()));
-      return FALSE;
+      std::throw_with_nested(ProtobufFieldConverter::SetException(*reflectors, "Failed to convert map value"));
     }
 
   return TRUE;
 }
 
-class MessageFieldConverter : public ProtobufFieldConverter
+class MessageFieldConverter : public SingleProtobufFieldConverter
 {
 public:
   FilterXObject *get(Message *message, ProtoReflectors reflectors)
@@ -685,10 +670,8 @@ public:
         Message *elem_message = reflectors.reflection->MutableRepeatedMessage(message, reflectors.field_descriptor, i);
 
         const std::string &field_name = reflectors.field_descriptor->name();
-        ProtoReflectors elem_reflectors(*message, field_name);
-        ProtobufFieldConverter *converter = get_protobuf_field_converter(elem_reflectors.field_type);
 
-        FilterXObject *value_object = converter->get(elem_message, field_name);
+        FilterXObject *value_object = protobuf_field_converter.get(elem_message, field_name);
         if (!value_object)
           return NULL;
 
@@ -697,7 +680,7 @@ public:
           {
             filterx_object_unref(key_object);
             filterx_object_unref(value_object);
-            return NULL;
+            return NULL; // TODO
           }
 
         filterx_object_unref(key_object);
@@ -707,52 +690,58 @@ public:
     return dict;
   }
 
-  bool set_repeated(Message *message, const std::string &field_name, FilterXObject *object,
+  void set_repeated(Message *message, ProtoReflectors reflectors, FilterXObject *object,
                     FilterXObject **assoc_object)
   {
-    ProtoReflectors reflectors(*message, field_name);
-
     if (reflectors.field_descriptor->is_map())
-      return map_field_converter.set_repeated(message, field_name, object, assoc_object);
-
-    return ProtobufFieldConverter::set_repeated(message, field_name, object, assoc_object);
+      return map_field_converter.set_repeated(message, reflectors, object, assoc_object);
+    return SingleProtobufFieldConverter::set_repeated(message, reflectors, object, assoc_object);
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     FilterXObject *dict = filterx_ref_unwrap_ro(object);
     if (!filterx_object_is_type(dict, &FILTERX_TYPE_NAME(dict)))
-      {
-        log_type_error(reflectors, object->type->name);
-        return false;
-      }
+      throw ProtobufFieldConverter::SetException(reflectors, "Expected a dict object for message field, got: " + std::string(dict->type->name));
 
-    Message *inner_message = reflectors.reflection->MutableMessage(message, reflectors.field_descriptor);
-    gpointer user_data = inner_message;
-    return filterx_dict_iter(dict, _message_add_elem, user_data);
+    try
+      {
+        Message *inner_message = reflectors.reflection->MutableMessage(message, reflectors.field_descriptor);
+        gpointer user_data[] = { inner_message, &reflectors };
+        filterx_dict_iter(dict, _message_add_elem, user_data);
+      }
+    catch (const ProtobufFieldConverter::SetException &e)
+      {
+        throw ProtobufFieldConverter::AddException(e);
+      }
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
     FilterXObject *dict = filterx_ref_unwrap_ro(object);
     if (!filterx_object_is_type(dict, &FILTERX_TYPE_NAME(dict)))
-      {
-        log_type_error(reflectors, object->type->name);
-        return false;
-      }
+      throw ProtobufFieldConverter::SetException(reflectors, "Expected a dict object for message field, got: " + std::string(dict->type->name));
 
-    Message *inner_message = reflectors.reflection->AddMessage(message, reflectors.field_descriptor);
-    gpointer user_data = inner_message;
-    return filterx_dict_iter(dict, _message_add_elem, user_data);
+    try
+      {
+        Message *inner_message = reflectors.reflection->AddMessage(message, reflectors.field_descriptor);
+        gpointer user_data[] = { inner_message, &reflectors };
+        filterx_dict_iter(dict, _message_add_elem, user_data);
+      }
+    catch (const ProtobufFieldConverter::SetException &e)
+      {
+        throw ProtobufFieldConverter::AddException(e);
+      }
   }
 };
 
 MapFieldConverter syslogng::grpc::map_field_converter;
 
-std::unique_ptr<ProtobufFieldConverter> *
-syslogng::grpc::all_protobuf_converters()
+SingleProtobufFieldConverter *
+syslogng::grpc::ProtobufFieldConverter::get_single_converter(google::protobuf::FieldDescriptor::Type field_type)
 {
-  static std::unique_ptr<ProtobufFieldConverter> Converters[google::protobuf::FieldDescriptor::MAX_TYPE] =
+  g_assert(field_type <= google::protobuf::FieldDescriptor::MAX_TYPE && field_type > 0);
+  static std::unique_ptr<SingleProtobufFieldConverter> converters[google::protobuf::FieldDescriptor::MAX_TYPE] =
   {
     std::make_unique<DoubleFieldConverter>(),  // TYPE_DOUBLE = 1,       double, exactly eight bytes on the wire.
     std::make_unique<FloatFieldConverter>(),   // TYPE_FLOAT = 2,        float, exactly four bytes on the wire.
@@ -777,14 +766,7 @@ syslogng::grpc::all_protobuf_converters()
     std::make_unique<i32FieldConverter>(),     // TYPE_SINT32 = 17,      int32, ZigZag-encoded varint on the wire
     std::make_unique<i64FieldConverter>(),     // TYPE_SINT64 = 18,      int64, ZigZag-encoded varint on the wire
   };
-  return Converters;
-};
-
-ProtobufFieldConverter *
-syslogng::grpc::get_protobuf_field_converter(google::protobuf::FieldDescriptor::Type field_type)
-{
-  g_assert(field_type <= google::protobuf::FieldDescriptor::MAX_TYPE && field_type > 0);
-  return all_protobuf_converters()[field_type - 1].get();
+  return converters[field_type - 1].get();
 }
 
 std::string
@@ -794,7 +776,7 @@ syslogng::grpc::extract_string_from_object(FilterXObject *object)
   gsize len;
 
   if (!filterx_object_extract_string_ref(object, &key_c_str, &len))
-    throw std::runtime_error("not a string instance");
+    throw std::invalid_argument("not a string instance");
 
   return std::string{key_c_str, len};
 }

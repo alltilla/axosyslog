@@ -85,13 +85,13 @@ protected:
   const google::protobuf::Message &get_protobuf_value() const override;
 };
 
-class KVListFieldConverter : public ProtobufFieldConverter
+class KVListFieldConverter : public SingleProtobufFieldConverter
 {
 public:
   FilterXObject *get(google::protobuf::Message *message, ProtoReflectors reflectors);
-  bool set(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object,
+  void set(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object,
            FilterXObject **assoc_object);
-  bool add(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object);
+  void add(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object);
 };
 
 extern KVListFieldConverter kvlist_field_converter;

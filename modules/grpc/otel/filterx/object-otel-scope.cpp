@@ -67,7 +67,7 @@ Scope::set_subscript(FilterXObject *key, FilterXObject **value)
     {
       std::string key_str = extract_string_from_object(key);
       ProtoReflectors reflectors(scope, key_str);
-      ProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
+      SingleProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
 
       FilterXObject *assoc_object = NULL;
       if (!converter->set(&scope, key_str, *value, &assoc_object))
@@ -90,7 +90,7 @@ Scope::get_subscript(FilterXObject *key)
     {
       std::string key_str = extract_string_from_object(key);
       ProtoReflectors reflectors(scope, key_str);
-      ProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
+      SingleProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
 
       return converter->get(&scope, key_str);
     }
@@ -105,16 +105,15 @@ Scope::unset_key(FilterXObject *key)
 {
   try
     {
-      std::string key_str = extract_string_from_object(key);
-      ProtoReflectors reflectors(scope, key_str);
-      ProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
-
-      return converter->unset(&scope, key_str);
+      get_otel_protobuf_field_converter(scope, key)->unset(&scope, key_str);
     }
-  catch(const std::exception &ex)
+  catch (const SingleProtobufFieldConverter::Exception &ex)
     {
+      // TODO: push errors
       return false;
     }
+
+  return true;
 }
 
 bool
@@ -124,7 +123,7 @@ Scope::is_key_set(FilterXObject *key)
     {
       std::string key_str = extract_string_from_object(key);
       ProtoReflectors reflectors(scope, key_str);
-      ProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
+      SingleProtobufFieldConverter *converter = get_otel_protobuf_field_converter(reflectors.field_descriptor);
 
       return converter->is_set(&scope, key_str);
     }

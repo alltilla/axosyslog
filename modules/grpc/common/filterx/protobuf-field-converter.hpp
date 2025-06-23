@@ -20,8 +20,8 @@
  *
  */
 
-#ifndef PROTOBUF_FIELD_HPP
-#define PROTOBUF_FIELD_HPP
+#ifndef PROTOBUF_FIELD_CONVERTER_HPP
+#define PROTOBUF_FIELD_CONVERTER_HPP
 
 #include "syslog-ng.h"
 
@@ -30,42 +30,35 @@
 #include "filterx/object-list-interface.h"
 #include "compat/cpp-end.h"
 
+#include "filterx-eval-exception.hpp"
+
 #include <google/protobuf/message.h>
 #include <google/protobuf/reflection.h>
 #include <google/protobuf/descriptor.h>
+
+#include <vector>
 
 namespace syslogng {
 namespace grpc {
 
 struct ProtoReflectors
 {
-  const google::protobuf::Reflection *reflection;
-  const google::protobuf::Descriptor *descriptor;
-  const google::protobuf::FieldDescriptor *field_descriptor;
-  google::protobuf::FieldDescriptor::Type field_type;
-  ProtoReflectors(const google::protobuf::Message &message, const std::string &field_name)
+  class FieldNotFoundException : public std::out_of_range
   {
-    this->reflection = message.GetReflection();
-    this->descriptor = message.GetDescriptor();
-    if (!this->reflection || !this->descriptor)
-      {
-        std::string error_msg = "unable to access reflector for protobuf message: "
-                                + std::string(message.GetTypeName());
-        throw std::invalid_argument(error_msg);
-      }
-    this->field_descriptor = this->descriptor->FindFieldByName(field_name);
+  public:
+    FieldNotFoundException(const std::string &field_name) :
+      std::out_of_range(std::string("Protobuf field does not exist, name: " + field_name)) {}
+  };
+
+  ProtoReflectors(const google::protobuf::Message &message, const std::string &field_name) :
+    reflection(message.GetReflection()),
+    descriptor(message.GetDescriptor()),
+    field_descriptor(this->descriptor->FindFieldByName(field_name))
+  {
     if (!this->field_descriptor)
-      {
-        std::string error_msg = "unknown field name: " + field_name;
-        throw std::invalid_argument(error_msg);
-      }
+      throw FieldNotFoundException(field_name);
+
     this->field_type = this->field_descriptor->type();
-    if (this->field_type > google::protobuf::FieldDescriptor::MAX_TYPE ||
-        this->field_type < 1)
-      {
-        std::string error_msg = "unknown field type: " + field_name + ", " +  std::to_string(this->field_type);
-        throw std::invalid_argument(error_msg);
-      }
   };
 
   const char *
@@ -77,153 +70,230 @@ struct ProtoReflectors
     return this->field_descriptor->type_name();
 #endif
   }
+
+public:
+  const google::protobuf::Reflection *reflection;
+  const google::protobuf::Descriptor *descriptor;
+  const google::protobuf::FieldDescriptor *field_descriptor;
+  google::protobuf::FieldDescriptor::Type field_type;
 };
+
+
+class SingleProtobufFieldConverter
+{
+public:
+  virtual ~SingleProtobufFieldConverter() {}
+
+  virtual FilterXObject *get(google::protobuf::Message *message, ProtoReflectors reflectors) = 0;
+  virtual void set(google::protobuf::Message *message, ProtoReflectors reflectors,
+                   FilterXObject *object, FilterXObject **assoc_object) = 0;
+  virtual void add(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object) = 0;
+
+  virtual void set_repeated(google::protobuf::Message *message, ProtoReflectors reflectors,
+                            FilterXObject *object, FilterXObject **assoc_object);
+};
+
 
 class ProtobufFieldConverter
 {
+  public:
+  class TypeNotSupportedException : public std::invalid_argument
+  {
+  public:
+    TypeNotSupportedException(FilterXObject *object, const std::string &expected_type) :
+      std::invalid_argument(std::string("FilterX type must be: " + expected_type + ", got: " + object->type->name)) {}
+  };
+
+  class Exception : public FilterXEvalException
+  {
+  public:
+    using FilterXEvalException::FilterXEvalException;
+    Exception(const gchar *message_, const std::string &info_) : FilterXEvalException(message_, info_, nullptr) {}
+    Exception(const ProtoReflectors &reflectors, const gchar *message_, const std::string &info_) :
+      FilterXEvalException(
+        message_,
+        std::string("name: ") + reflectors.field_descriptor->name() +
+        ", type: " + reflectors.field_type_name() +
+        ": " + info_,
+        nullptr
+      ) {}
+  };
+
+  class SetException : public Exception
+  {
+  public:
+    SetException(const std::string &i) : Exception("Failed to set protobuf field", i) {}
+    SetException(const ProtoReflectors &r, const std::string &i) : Exception(r, "Failed to set protobuf field", i) {}
+  };
+
+  class AddException : public Exception
+  {
+  public:
+    AddException(const SetException &e) : Exception(e) {}
+    AddException(const std::string &info_) : Exception("Failed to add protobuf field", info_) {}
+    AddException(const ProtoReflectors &r, const std::string &i) : Exception(r, "Failed to add protobuf field", i) {}
+  };
+
+  class GetException : public Exception
+  {
+  public:
+    GetException(const std::string &i) : Exception("Failed to get protobuf field", i) {}
+    GetException(const ProtoReflectors &r, const std::string &i) : Exception(r, "Failed to get protobuf field", i) {}
+  };
+
+  class UnsetException : public Exception
+  {
+  public:
+    UnsetException(const std::string &i) : Exception("Failed to unset protobuf field", i) {}
+    UnsetException(const ProtoReflectors &r, const std::string &i) : Exception(r, "Failed to unset protobuf field", i) {}
+  };
+
+  class CheckException : public Exception
+  {
+  public:
+    CheckException(const std::string &i) : Exception("Failed to check protobuf field", i) {}
+    CheckException(const ProtoReflectors &r, const std::string &i) : Exception(r, "Failed to check protobuf field", i) {}
+  };
+
 public:
+  FilterXObject *get(google::protobuf::Message *message, FilterXObject *field)
+  {
+    try
+      {
+        std::string field_name = extract_string_from_object(field);
+        return ProtobufFieldConverter::get(message, field_name);
+      }
+    catch (const std::invalid_argument &e)
+      {
+        throw GetException(e.what());
+      }
+    }
+
   FilterXObject *get(google::protobuf::Message *message, const std::string &field_name)
   {
     try
       {
         ProtoReflectors reflectors(*message, field_name);
-        return this->get(message, reflectors);
+        return get_single_converter(reflectors.field_type)->get(message, reflectors);
       }
-    catch(const std::exception &ex)
+    catch (const ProtoReflectors::FieldNotFoundException &e)
       {
-        msg_error("protobuf-field: Failed to get field:", evt_tag_str("message", ex.what()));
-        return nullptr;
-      }
-  };
-
-  bool set(google::protobuf::Message *message, const std::string &field_name, FilterXObject *object,
-           FilterXObject **assoc_object)
-  {
-    try
-      {
-        ProtoReflectors reflectors(*message, field_name);
-        if (this->set(message, reflectors, object, assoc_object))
-          {
-            if (!(*assoc_object))
-              *assoc_object = filterx_object_ref(object);
-            return true;
-          }
-        return false;
-      }
-    catch(const std::exception &ex)
-      {
-        msg_error("protobuf-field: Failed to set field:", evt_tag_str("message", ex.what()));
-        return false;
+        throw GetException(e.what());
       }
   }
 
-  virtual bool set_repeated(google::protobuf::Message *message, const std::string &field_name, FilterXObject *object,
-                            FilterXObject **assoc_object)
+  void set(google::protobuf::Message *message, FilterXObject *field, FilterXObject *object,
+                  FilterXObject **assoc_object = nullptr)
   {
     try
       {
-        ProtoReflectors reflectors(*message, field_name);
-        if (!reflectors.field_descriptor->is_repeated())
-          {
-            msg_error("protobuf-field: Failed to set repeated field, field is not repeated",
-                      evt_tag_str("field", reflectors.field_type_name()));
-            return false;
-          }
-
-        FilterXObject *list = filterx_ref_unwrap_ro(object);
-        if (!filterx_object_is_type(list, &FILTERX_TYPE_NAME(list)))
-          {
-            msg_error("protobuf-field: Failed to set repeated field, object is not a list",
-                      evt_tag_str("field", reflectors.field_type_name()),
-                      evt_tag_str("type", list->type->name));
-            return false;
-          }
-
-        reflectors.reflection->ClearField(message, reflectors.field_descriptor);
-
-        guint64 len;
-        g_assert(filterx_object_len(list, &len));
-
-        for (gsize i = 0; i < len; i++)
-          {
-            FilterXObject *elem = filterx_list_get_subscript(list, i);
-
-            if (!this->add(message, reflectors, elem))
-              {
-                msg_error("protobuf-field: Failed to add element to repeated field",
-                          evt_tag_str("field", reflectors.field_type_name()),
-                          evt_tag_str("type", elem->type->name));
-                filterx_object_unref(elem);
-                return false;
-              }
-
-            filterx_object_unref(elem);
-          }
-
-        *assoc_object = filterx_object_ref(object);
-        return true;
+        std::string field_name = extract_string_from_object(field);
+        ProtobufFieldConverter::set(message, field_name, object, assoc_object);
       }
-    catch(const std::exception &ex)
+    catch (const std::invalid_argument &e)
       {
-        msg_error("protobuf-field: Failed to set repeated field:", evt_tag_str("message", ex.what()));
-        return false;
+        throw SetException(e.what());
       }
   }
 
-  bool unset(google::protobuf::Message *message, const std::string &field_name)
+  void set(google::protobuf::Message *message, const std::string &field_name, FilterXObject *object,
+                  FilterXObject **assoc_object = nullptr)
+  {
+    FilterXObject *local_assoc_object = nullptr;
+    if (!assoc_object)
+      assoc_object = &local_assoc_object;
+
+    try
+      {
+        ProtoReflectors reflectors(*message, field_name);
+        get_single_converter(reflectors.field_type)->set(message, reflectors, object, assoc_object);
+      }
+    catch (const ProtoReflectors::FieldNotFoundException &e)
+      {
+        throw SetException(e.what());
+      }
+
+    if (local_assoc_object)
+      filterx_object_unref(local_assoc_object);
+    else if (!(*assoc_object))
+      *assoc_object = filterx_object_ref(object);
+  }
+
+  void set_repeated(google::protobuf::Message *message, FilterXObject *field, FilterXObject *object,
+                           FilterXObject **assoc_object)
   {
     try
       {
+        std::string field_name = extract_string_from_object(field);
+        ProtoReflectors reflectors(*message, field_name);
+        get_single_converter(reflectors.field_type)->set_repeated(message, reflectors, object, assoc_object);
+      }
+    catch (const std::invalid_argument &e)
+      {
+        throw SetException(e.what());
+      }
+    catch (const ProtoReflectors::FieldNotFoundException &e)
+      {
+        throw SetException(e.what());
+      }
+  }
+
+  void unset(google::protobuf::Message *message, FilterXObject *field)
+  {
+    try
+      {
+        std::string field_name = extract_string_from_object(field);
         ProtoReflectors reflectors(*message, field_name);
         reflectors.reflection->ClearField(message, reflectors.field_descriptor);
-        return true;
       }
-    catch(const std::exception &ex)
+    catch (const std::invalid_argument &e)
       {
-        msg_error("protobuf-field: Failed to unset field:", evt_tag_str("message", ex.what()));
-        return false;
+        throw UnsetException(e.what());
+      }
+    catch (const ProtoReflectors::FieldNotFoundException &e)
+      {
+        throw UnsetException(e.what());
       }
   }
 
-  bool is_set(google::protobuf::Message *message, const std::string &field_name)
+  bool is_set(google::protobuf::Message *message, FilterXObject *field)
   {
     try
       {
+        std::string field_name = extract_string_from_object(field);
         ProtoReflectors reflectors(*message, field_name);
         return reflectors.reflection->HasField(*message, reflectors.field_descriptor);
       }
-    catch(const std::exception &ex)
+    catch (const std::invalid_argument &e)
       {
-        msg_error("protobuf-field: Failed to check field:", evt_tag_str("message", ex.what()));
-        return false;
+        throw UnsetException(e.what());
+      }
+    catch (const ProtoReflectors::FieldNotFoundException &e)
+      {
+        throw UnsetException(e.what());
       }
   }
 
-  virtual ~ProtobufFieldConverter() {}
-
 protected:
-  virtual FilterXObject *get(google::protobuf::Message *message, ProtoReflectors reflectors) = 0;
-  virtual bool set(google::protobuf::Message *message, ProtoReflectors reflectors,
-                   FilterXObject *object, FilterXObject **assoc_object) = 0;
-  virtual bool add(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object) = 0;
+  SingleProtobufFieldConverter *get_single_converter(google::protobuf::FieldDescriptor::Type field_type);
 };
 
-class MapFieldConverter : public ProtobufFieldConverter
+extern ProtobufFieldConverter protobuf_field_converter;
+
+
+class MapFieldConverter : public SingleProtobufFieldConverter
 {
 public:
-  bool set_repeated(google::protobuf::Message *message, const std::string &field_name, FilterXObject *object,
+  void set_repeated(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object,
                     FilterXObject **assoc_object);
 
   FilterXObject *get(google::protobuf::Message *message, ProtoReflectors reflectors);
-  bool set(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object,
+  void set(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object,
            FilterXObject **assoc_object);
-  bool add(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object);
+  void add(google::protobuf::Message *message, ProtoReflectors reflectors, FilterXObject *object);
 };
 
 extern MapFieldConverter map_field_converter;
-
-std::unique_ptr<ProtobufFieldConverter> *all_protobuf_converters();
-ProtobufFieldConverter *get_protobuf_field_converter(google::protobuf::FieldDescriptor::Type field_type);
 
 std::string extract_string_from_object(FilterXObject *object);
 

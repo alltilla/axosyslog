@@ -110,7 +110,7 @@ AnyValueFieldConverter::get(Message *message, ProtoReflectors reflectors)
   return nullptr;
 }
 
-bool
+void
 AnyValueFieldConverter::set(Message *message, ProtoReflectors reflectors, FilterXObject *object,
                             FilterXObject **assoc_object)
 {
@@ -127,16 +127,16 @@ AnyValueFieldConverter::set(Message *message, ProtoReflectors reflectors, Filter
   return direct_set(any_value, object, assoc_object);
 }
 
-bool
+void
 AnyValueFieldConverter::add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
 {
-  throw std::runtime_error("AnyValueFieldConverter: add operation is not supported");
+  throw TypeNotSupportedException(object, "-");
 }
 
 FilterXObject *
 AnyValueFieldConverter::direct_get(AnyValue *any_value)
 {
-  ProtobufFieldConverter *converter = nullptr;
+  SingleProtobufFieldConverter *converter = nullptr;
   std::string type_field_name;
   AnyValue::ValueCase valueCase = any_value->value_case();
 
@@ -179,10 +179,10 @@ AnyValueFieldConverter::direct_get(AnyValue *any_value)
   return converter->get(any_value, type_field_name.data());
 }
 
-bool
+void
 AnyValueFieldConverter::direct_set(AnyValue *any_value, FilterXObject *object, FilterXObject **assoc_object)
 {
-  ProtobufFieldConverter *converter = nullptr;
+  SingleProtobufFieldConverter *converter = nullptr;
   const char *type_field_name;
 
   FilterXObject *object_unwrapped = filterx_ref_unwrap_ro(object);
@@ -255,22 +255,17 @@ AnyValueFieldConverter::direct_set(AnyValue *any_value, FilterXObject *object, F
             filterx_message_value_get_type(object) == LM_VT_NULL))
     {
       any_value->clear_value();
-      return true;
     }
 
   if (!converter)
-    {
-      msg_error("otel-field: FilterX type -> AnyValue field type conversion not yet implemented",
-                evt_tag_str("type", object->type->name));
-      return false;
-    }
+    throw TypeNotSupportedException(object, "bool, integer, double, string, bytes, dict, list, datetime or null");
 
-  return converter->set(any_value, type_field_name, object, assoc_object);
+  converter->set(any_value, type_field_name, object, assoc_object);
 }
 
 AnyValueFieldConverter syslogng::grpc::otel::any_value_field;
 
-class DatetimeFieldConverter : public ProtobufFieldConverter
+class DatetimeFieldConverter : public SingleProtobufFieldConverter
 {
 public:
   FilterXObject *get(Message *message, ProtoReflectors reflectors)
@@ -280,29 +275,28 @@ public:
     return filterx_datetime_new(&utime);
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     UnixTime utime;
     if (filterx_object_extract_datetime(object, &utime))
       {
         uint64_t unix_epoch = unix_time_to_unix_epoch_nsec(utime);
         reflectors.reflection->SetUInt64(message, reflectors.field_descriptor, unix_epoch);
-        return true;
       }
 
     return get_protobuf_field_converter(reflectors.field_descriptor->type())->set(message,
            std::string(reflectors.field_descriptor->name()), object, assoc_object);
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
-    throw std::runtime_error("DatetimeFieldConverter: add operation is not supported");
+    throw TypeNotSupportedException(object, "-");
   }
 };
 
 static DatetimeFieldConverter datetime_field;
 
-class SeverityNumberFieldConverter : public ProtobufFieldConverter
+class SeverityNumberFieldConverter : public SingleProtobufFieldConverter
 {
 public:
   FilterXObject *get(Message *message, ProtoReflectors reflectors)
@@ -311,39 +305,30 @@ public:
     return filterx_integer_new(value);
   }
 
-  bool set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
+  void set(Message *message, ProtoReflectors reflectors, FilterXObject *object, FilterXObject **assoc_object)
   {
     if (filterx_object_is_type(object, &FILTERX_TYPE_NAME(integer)))
       {
         gint64 value;
         g_assert(filterx_integer_unwrap(object, &value));
         if (!SeverityNumber_IsValid((int) value))
-          {
-            msg_error("otel-field: Failed to set severity_number",
-                      evt_tag_str("error", "Value is invalid"),
-                      evt_tag_int("value", value));
-            return false;
-          }
+          throw SetException(reflectors, std::string("Severity value is invalid: ") + std::to_string(value));
 
         reflectors.reflection->SetEnumValue(message, reflectors.field_descriptor, (int) value);
-        return true;
       }
 
-    msg_error("otel-field: Failed to set severity_number",
-              evt_tag_str("error", "Value type is invalid"),
-              evt_tag_str("type", object->type->name));
-    return false;
+    throw TypeNotSupportedException(object, "integer");
   }
 
-  bool add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
+  void add(Message *message, ProtoReflectors reflectors, FilterXObject *object)
   {
-    throw std::runtime_error("SeverityNumberFieldConverter: add operation is not supported");
+    throw TypeNotSupportedException(object, "-");
   }
 };
 
 static SeverityNumberFieldConverter severity_number_field;
 
-ProtobufFieldConverter *
+SingleProtobufFieldConverter *
 syslogng::grpc::otel::get_otel_protobuf_field_converter(FieldDescriptor::Type field_type)
 {
   g_assert(field_type <= FieldDescriptor::MAX_TYPE && field_type > 0);
@@ -354,7 +339,7 @@ syslogng::grpc::otel::get_otel_protobuf_field_converter(FieldDescriptor::Type fi
   return all_protobuf_converters()[field_type - 1].get();
 }
 
-ProtobufFieldConverter *
+SingleProtobufFieldConverter *
 syslogng::grpc::otel::get_otel_protobuf_field_converter(const FieldDescriptor *fd)
 {
   const auto &field_name = fd->name();
@@ -392,7 +377,7 @@ syslogng::grpc::otel::iter_on_otel_protobuf_message_fields(google::protobuf::Mes
         {
           const std::string name = std::string(field->name());
           ProtoReflectors field_reflectors(message, name);
-          ProtobufFieldConverter *converter = syslogng::grpc::otel::get_otel_protobuf_field_converter(
+          SingleProtobufFieldConverter *converter = syslogng::grpc::otel::get_otel_protobuf_field_converter(
                                                 field_reflectors.field_descriptor);
 
           FILTERX_STRING_DECLARE_ON_STACK(key, name.c_str(), name.size());
@@ -418,4 +403,25 @@ syslogng::grpc::otel::iter_on_otel_protobuf_message_fields(google::protobuf::Mes
     }
 
   return true;
+}
+
+SingleProtobufFieldConverter *
+get_otel_protobuf_field_converter(const google::protobuf::Message &message, FilterXObject *key)
+{
+  try
+    {
+      std::string key_str = extract_string_from_object(key);
+      ProtoReflectors reflectors(message, key_str);
+    }
+  catch (const std::invalid_argument &)
+    {
+      throw SingleProtobufFieldConverter::Exception(
+        "Failed to find OTel field converter",
+        SingleProtobufFieldConverter::TypeNotSupportedException(key, "string").what()
+      );
+    }
+  catch (const ProtoReflectors::FieldNotFoundException &e)
+    {
+      throw SingleProtobufFieldConverter::Exception("Failed to find OTel field converter", e.what());
+    }
 }
