@@ -5,7 +5,8 @@ else
 sbin_PROGRAMS			+= syslog-ng/syslog-ng
 endif
 
-syslog_ng_syslog_ng_SOURCES	= syslog-ng/main.c
+syslog_ng_syslog_ng_SOURCES	= syslog-ng/main.c modules/modules-ref.c
+syslog_ng_syslog_ng_DEPENDENCIES= $(module_LTLIBRARIES)
 
 EXTRA_DIST += syslog-ng/CMakeLists.txt
 
@@ -13,8 +14,9 @@ EXTRA_DIST += syslog-ng/CMakeLists.txt
 # libtool, because in mixed mode libtool is not used for the final linking
 # phase.  See the comment in the configure script for details.
 
-syslog_ng_syslog_ng_LDADD		= lib/libsyslog-ng.la @SYSLOGNG_DEPS_LIBS@
+syslog_ng_syslog_ng_LDADD		= $(module_LTLIBRARIES) lib/libsyslog-ng.la @SYSLOGNG_DEPS_LIBS@ -lstdc++
 syslog_ng_syslog_ng_LINK		=  @SYSLOGNG_LINK@
+#EXTRA_syslog_ng_syslog_ng_DEPENDENCIES	= lib/libsyslog-ng.la
 
 syslog_ng_syslog_ng_wrapper_SOURCES	= syslog-ng/wrapper.c
 
