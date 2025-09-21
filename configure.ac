@@ -1045,7 +1045,7 @@ dnl ***************************************************************************
 GLIB_ADDONS="gmodule-2.0 gthread-2.0"
 PKG_CHECK_MODULES(GLIB, glib-2.0 >= $GLIB_MIN_VERSION $GLIB_ADDONS,,)
 
-if test "$linking_mode" = "mixed"; then
+if test "$linking_mode" != "dynamic"; then
 	# strip out -ldl & -lrt as it cannot be linked statically
 	GLIB_LIBS=`echo $GLIB_LIBS | tr ' ' '\n' | egrep -v "^(-ldld?)|(-lrt)$" | tr '\n' ' '`
 
@@ -2182,8 +2182,6 @@ if test -z "$MODULE_LDFLAGS"; then
 fi
 MODULE_DEPS_LIBS="\$(top_builddir)/lib/libsyslog-ng.la"
 
-# syslog-ng binary is linked with the default link command (e.g. libtool)
-SYSLOGNG_LINK='$(LINK)'
 if test "x$linking_mode" = "xdynamic"; then
 	SYSLOGNG_DEPS_LIBS="$LIBS $BASE_LIBS $GLIB_LIBS $EVTLOG_LIBS $SECRETSTORAGE_LIBS $RESOLV_LIBS $LIBCAP_LIBS $PCRE2_LIBS $REGEX_LIBS $DL_LIBS $LIBUNWIND_LIBS $JSON_LIBS $OPENSSL_LIBS"
 
@@ -2201,7 +2199,9 @@ if test "x$linking_mode" = "xdynamic"; then
 		CORE_DEPS_LIBS="$SYSLOGNG_DEPS_LIBS"
 	fi
 
-elif test "x$linking_mode" = "xmixed"; then
+	# syslog-ng binary is linked with the default link command (e.g. libtool)
+	SYSLOGNG_LINK='$(LINK)'
+else
 	SYSLOGNG_DEPS_LIBS="$LIBS $BASE_LIBS $RESOLV_LIBS $EVTLOG_NO_LIBTOOL_LIBS $SECRETSTORAGE_NO_LIBTOOL_LIBS $LD_START_STATIC -Wl,${WHOLE_ARCHIVE_OPT} $GLIB_LIBS $PCRE2_LIBS $OPENSSL_LIBS $REGEX_LIBS $JSON_LIBS $LIBUNWIND_LIBS -Wl,${NO_WHOLE_ARCHIVE_OPT} $IVYKIS_NO_LIBTOOL_LIBS $LD_END_STATIC $LIBCAP_LIBS $DL_LIBS"
 	TOOL_DEPS_LIBS="$LIBS $BASE_LIBS $GLIB_LIBS $EVTLOG_LIBS $SECRETSTORAGE_LIBS $RESOLV_LIBS $LIBCAP_LIBS $PCRE2_LIBS $REGEX_LIBS $IVYKIS_LIBS $DL_LIBS $OPENSSL_LIBS $JSON_LIBS"
 	CORE_DEPS_LIBS=""
@@ -2209,12 +2209,6 @@ elif test "x$linking_mode" = "xmixed"; then
 	# bypass libtool in case we want to do mixed linking because it
 	# doesn't support -Wl,-Bstatic -Wl,-Bdynamic on a per-library basis.
 	SYSLOGNG_LINK='$(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@'
-elif test "x$linking_mode" = "xmonolithic"; then
-	enable_shared=no
-	enable_static=yes
-	SYSLOGNG_DEPS_LIBS="$LIBS $BASE_LIBS $RESOLV_LIBS $EVTLOG_LIBS $SECRETSTORAGE_LIBS $GLIB_LIBS $PCRE2_LIBS $OPENSSL_LIBS $REGEX_LIBS $JSON_LIBS $LIBUNWIND_LIBS $IVYKIS_LIBS $LIBCAP_LIBS $DL_LIBS"
-	TOOL_DEPS_LIBS="$LIBS $BASE_LIBS $GLIB_LIBS $EVTLOG_LIBS $SECRETSTORAGE_LIBS $RESOLV_LIBS $LIBCAP_LIBS $PCRE2_LIBS $REGEX_LIBS $IVYKIS_LIBS $DL_LIBS $OPENSSL_LIBS $JSON_LIBS"
-	CORE_DEPS_LIBS=""
 fi
 YFLAGS="-d"
 
