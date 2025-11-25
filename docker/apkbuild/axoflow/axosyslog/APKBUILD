@@ -11,7 +11,7 @@ pkgdesc="Next generation logging daemon"
 url="https://axoflow.com/docs/axosyslog/"
 arch="all"
 license="GPL-3.0-or-later"
-options="!check" # unit tests require https://github.com/Snaipe/Criterion with deps
+options="!check !strip" # unit tests require https://github.com/Snaipe/Criterion with deps
 makedepends="
 	bison
 	bpftool
