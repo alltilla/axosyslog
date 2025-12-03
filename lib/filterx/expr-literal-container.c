@@ -164,6 +164,7 @@ _literal_container_optimize(FilterXExpr *s)
         }
     }
   FilterXObject *container = self->eval_early(self);
+  filterx_object_cow_store(&container);
   if (literal)
     return filterx_literal_new(container);
   else
