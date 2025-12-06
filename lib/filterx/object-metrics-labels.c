@@ -44,6 +44,13 @@ typedef struct _FilterXObjectMetricsLabels
   gboolean deduped;
 } FilterXObjectMetricsLabels;
 
+static void
+_label_destroy(StatsClusterLabel *label)
+{
+  g_free((gchar *) label->name);
+  g_free((gchar *) label->value);
+}
+
 static gboolean
 _truthy(FilterXObject *s)
 {
@@ -164,12 +171,6 @@ _set_subscript(FilterXObject *s, FilterXObject *key, FilterXObject **new_value)
   self->sorted = FALSE;
   self->deduped = FALSE;
 
-  if (!filterx_object_is_type(*new_value, &FILTERX_TYPE_NAME(string)))
-    {
-      filterx_object_unref(*new_value);
-      *new_value = filterx_string_new(value_str, value_len);
-    }
-
   scratch_buffers_reclaim_marked(marker);
   return TRUE;
 }
@@ -264,39 +265,29 @@ _clone(FilterXObject *s)
   return &cloned->super.super;
 }
 
-static void
-_label_destroy(StatsClusterLabel *label)
-{
-  g_free((gchar *) label->name);
-  g_free((gchar *) label->value);
-}
 
 static void
 _free(FilterXObject *s)
 {
   FilterXObjectMetricsLabels *self = (FilterXObjectMetricsLabels *) s;
 
-  for (guint i = 0; i < self->labels->len; i++)
-    _label_destroy(&g_array_index(self->labels, StatsClusterLabel, i));
-
   g_array_free(self->labels, TRUE);
   filterx_object_free_method(s);
 }
 
 static void
-_dedup(FilterXObject *s)
+_dedup(FilterXObjectMetricsLabels *self)
 {
-  FilterXObjectMetricsLabels *typed_self = (FilterXObjectMetricsLabels *) filterx_ref_unwrap_rw(s);
-
   GHashTable *labels_map = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, (GDestroyNotify) _label_destroy);
 
-  for (guint i = 0; i < typed_self->labels->len; i++)
+  for (guint i = 0; i < self->labels->len; i++)
     {
-      StatsClusterLabel *label = &g_array_index(typed_self->labels, StatsClusterLabel, i);
+      StatsClusterLabel *label = &g_array_index(self->labels, StatsClusterLabel, i);
       g_hash_table_replace(labels_map, (gpointer) label->name, label);
     }
 
-  GArray *new_labels = g_array_sized_new(FALSE, FALSE, sizeof(StatsClusterLabel), typed_self->labels->len);
+  g_array_set_clear_func(self->labels, NULL);
+  g_array_set_size(self->labels, 0);
 
   GHashTableIter iter;
   g_hash_table_iter_init(&iter, labels_map);
@@ -305,15 +296,14 @@ _dedup(FilterXObject *s)
   while (g_hash_table_iter_next(&iter, &k, &v))
     {
       StatsClusterLabel *label = v;
-      g_array_append_val(new_labels, *label);
+      g_array_append_val(self->labels, *label);
     }
 
-  g_array_free(typed_self->labels, TRUE);
-  typed_self->labels = new_labels;
-  typed_self->deduped = TRUE;
+  self->deduped = TRUE;
 
   g_hash_table_steal_all(labels_map);
   g_hash_table_unref(labels_map);
+  g_array_set_clear_func(self->labels, (GDestroyNotify) _label_destroy);
 }
 
 static gint
@@ -343,8 +333,8 @@ filterx_object_metrics_labels_new(guint reserved_size)
   FilterXObjectMetricsLabels *self = g_new0(FilterXObjectMetricsLabels, 1);
   filterx_mapping_init_instance(&self->super, &FILTERX_TYPE_NAME(metrics_labels));
 
-
   self->labels = g_array_sized_new(FALSE, FALSE, sizeof(StatsClusterLabel), reserved_size);
+  g_array_set_clear_func(self->labels, (GDestroyNotify) _label_destroy);
 
   return &self->super.super;
 }
@@ -423,7 +413,8 @@ filterx_simple_function_dedup_metrics_labels(FilterXExpr *s, FilterXObject *args
   if (typed_obj->deduped)
     return filterx_boolean_new(TRUE);
 
-  _dedup(obj);
+  typed_obj = (FilterXObjectMetricsLabels *) filterx_ref_unwrap_rw(obj);
+  _dedup(typed_obj);
   return filterx_boolean_new(TRUE);
 }
 
