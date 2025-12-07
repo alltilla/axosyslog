@@ -26,6 +26,7 @@
 #include "filterx/filterx-expr.h"
 #include "filterx/filterx-error.h"
 #include "filterx/filterx-object.h"
+#include "filterx/filterx-allocator.h"
 #include "template/eval.h"
 
 #define FILTERX_CONTEXT_ERROR_STACK_SIZE (8)
@@ -68,6 +69,8 @@ struct _FilterXEvalContext
   FilterXObject *current_frame_meta;
   LogTemplateEvalOptions template_eval_options;
   GPtrArray *weak_refs;
+  FilterXAllocator *allocator;
+  FilterXAllocatorPosition allocator_position;
   FilterXEvalControl eval_control_modifier;
   FilterXEvalContext *previous_context;
 
@@ -182,9 +185,37 @@ filterx_eval_store_weak_ref(FilterXObject *object)
 
 #define FILTERX_EVAL_END_CONTEXT(eval_context) \
     while(0); \
-    filterx_eval_end_context(&eval_context); \
+    \
     if (local_scope) \
       filterx_scope_clear(scope); \
+    filterx_eval_end_context(&eval_context); \
   } while(0)
+
+static inline FilterXObject *
+filterx_malloc_object(gsize object_size, gsize alloc_size, gboolean zero_object)
+{
+  FilterXEvalContext *context = filterx_eval_get_context();
+  FilterXObject *result;
+  gboolean allocator_used = FALSE;
+
+  if (!context || !context->allocator)
+    result = (FilterXObject *) g_malloc(alloc_size);
+  else
+    {
+      result = (FilterXObject *) filterx_allocator_malloc(context->allocator, alloc_size);
+      allocator_used = TRUE;
+    }
+
+  if (zero_object)
+    memset(result, 0, alloc_size);
+  result->allocator_used = allocator_used;
+  return result;
+}
+
+#define filterx_new_object(t) ((t *) filterx_malloc_object(sizeof(t), sizeof(t), TRUE))
+#define filterx_new_object_with_extra(t, extra) ((t *) filterx_malloc_object(sizeof(t), sizeof(t) + extra, TRUE))
+
+void filterx_eval_global_init(void);
+void filterx_eval_global_deinit(void);
 
 #endif
