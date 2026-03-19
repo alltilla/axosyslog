@@ -204,6 +204,13 @@ SourceDriver::construct_worker(int worker_index)
 google::protobuf::Arena *
 SourceWorker::pop_arena()
 {
+  if (this->arena_pool.empty())
+    {
+      auto arena = std::make_unique<google::protobuf::Arena>();
+      auto raw_arena = arena.get();
+      this->arenas.push_back(std::move(arena));
+      return raw_arena;
+    }
   google::protobuf::Arena *arena = this->arena_pool.front();
   this->arena_pool.pop();
   return arena;
