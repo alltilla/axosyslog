@@ -438,7 +438,6 @@ permanent_error:
 LogThreadedResult
 DestWorker::flush_log_records()
 {
-  logs_service_response->Clear();
   ::grpc::Status status = logs_service_stub->Export(client_context.get(), *logs_service_request,
                                                     logs_service_response);
   owner.metrics.insert_grpc_request_stats(status);
@@ -459,7 +458,6 @@ DestWorker::flush_log_records()
 LogThreadedResult
 DestWorker::flush_metrics()
 {
-  metrics_service_response->Clear();
   ::grpc::Status status = metrics_service_stub->Export(client_context.get(), *metrics_service_request,
                                                        metrics_service_response);
   owner.metrics.insert_grpc_request_stats(status);
@@ -480,7 +478,6 @@ DestWorker::flush_metrics()
 LogThreadedResult
 DestWorker::flush_spans()
 {
-  trace_service_response->Clear();
   ::grpc::Status status = trace_service_stub->Export(client_context.get(), *trace_service_request,
                                                      trace_service_response);
   owner.metrics.insert_grpc_request_stats(status);
@@ -532,6 +529,9 @@ exit:
   logs_service_request->Clear();
   metrics_service_request->Clear();
   trace_service_request->Clear();
+  trace_service_response->Clear();
+  metrics_service_response->Clear();
+  logs_service_response->Clear();
   fallback_msg_scope_logs = nullptr;
 
   arena.Reset();
