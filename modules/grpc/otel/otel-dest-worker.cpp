@@ -85,6 +85,8 @@ DestWorker::DestWorker(GrpcDestWorker *s)
     spans_current_batch_bytes(0),
     formatter(s->super.owner->super.super.super.cfg)
 {
+  g_assert(&arena);
+  g_assert(logs_service_request->GetArena());
 }
 
 void
@@ -525,6 +527,7 @@ DestWorker::flush(LogThreadedFlushMode mode)
     }
 
 exit:
+  msg_error("before dest clear",  evt_tag_int("allocated", arena.SpaceAllocated()), evt_tag_int("used", arena.SpaceUsed()));
   client_context.reset();
   logs_service_request->Clear();
   metrics_service_request->Clear();
@@ -534,7 +537,9 @@ exit:
   logs_service_response->Clear();
   fallback_msg_scope_logs = nullptr;
 
-  arena.Reset();
+  msg_error("dest arena reset",
+    evt_tag_int("before_allocated", arena.SpaceAllocated()), evt_tag_int("before_used", arena.SpaceUsed()),
+     evt_tag_int("reset", arena.Reset()), evt_tag_int("allocated", arena.SpaceAllocated()), evt_tag_int("used", arena.SpaceUsed()));
   logs_service_request = google::protobuf::Arena::Create<ExportLogsServiceRequest>(&arena);
   logs_service_response = google::protobuf::Arena::Create<ExportLogsServiceResponse>(&arena);
   metrics_service_request = google::protobuf::Arena::Create<ExportMetricsServiceRequest>(&arena);
