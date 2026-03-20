@@ -527,19 +527,23 @@ DestWorker::flush(LogThreadedFlushMode mode)
     }
 
 exit:
-  msg_error("before dest clear",  evt_tag_int("allocated", arena.SpaceAllocated()), evt_tag_int("used", arena.SpaceUsed()));
   client_context.reset();
-  logs_service_request->Clear();
-  metrics_service_request->Clear();
-  trace_service_request->Clear();
-  trace_service_response->Clear();
-  metrics_service_response->Clear();
-  logs_service_response->Clear();
   fallback_msg_scope_logs = nullptr;
 
-  msg_error("dest arena reset",
-    evt_tag_int("before_allocated", arena.SpaceAllocated()), evt_tag_int("before_used", arena.SpaceUsed()),
-     evt_tag_int("reset", arena.Reset()), evt_tag_int("allocated", arena.SpaceAllocated()), evt_tag_int("used", arena.SpaceUsed()));
+  int64_t before_reset_allocated = arena.SpaceAllocated();
+  int64_t before_reset_used = arena.SpaceUsed();
+  int64_t reset = arena.Reset();
+  int64_t after_reset_allocated = arena.SpaceAllocated();
+  int64_t after_reset_used = arena.SpaceUsed();
+
+  msg_error("dest reset",
+    evt_tag_int("before_reset_allocated", before_reset_allocated),
+    evt_tag_int("before_reset_used", before_reset_used),
+    evt_tag_int("reset", reset),
+    evt_tag_int("after_reset_allocated", after_reset_allocated),
+    evt_tag_int("after_reset_used", after_reset_used)
+  );
+
   logs_service_request = google::protobuf::Arena::Create<ExportLogsServiceRequest>(&arena);
   logs_service_response = google::protobuf::Arena::Create<ExportLogsServiceResponse>(&arena);
   metrics_service_request = google::protobuf::Arena::Create<ExportMetricsServiceRequest>(&arena);
