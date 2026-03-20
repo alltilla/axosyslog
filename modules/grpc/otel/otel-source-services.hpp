@@ -65,6 +65,24 @@ public:
     service->RequestExport(&ctx, request, &responder, cq, cq, this);
   }
 
+  ~AsyncServiceCall()
+  {
+    int64_t before_reset_allocated = arena->SpaceAllocated();
+    int64_t before_reset_used = arena->SpaceUsed();
+    int64_t reset = arena->Reset();
+    int64_t after_reset_allocated = arena->SpaceAllocated();
+    int64_t after_reset_used = arena->SpaceUsed();
+  
+    msg_error("source reset",
+      evt_tag_int("before_reset_allocated", before_reset_allocated),
+      evt_tag_int("before_reset_used", before_reset_used),
+      evt_tag_int("reset", reset),
+      evt_tag_int("after_reset_allocated", after_reset_allocated),
+      evt_tag_int("after_reset_used", after_reset_used)
+    );
+    worker.push_arena(arena);
+  }
+
 private:
   SourceWorker &worker;
   S *service;
@@ -89,9 +107,6 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
 {
   if (status == FINISH || !ok)
     {
-      request->Clear();
-      arena->Reset();
-      worker.push_arena(arena);
       delete this;
       return;
     }
@@ -143,10 +158,6 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
 
   status = FINISH;
   responder.Finish(response, response_status, this);
-
-  request->Clear();
-  arena->Reset();
-  worker.push_arena(arena);
 }
 
 template <> void
@@ -154,9 +165,6 @@ syslogng::grpc::otel::LogsServiceCall::Proceed(bool ok)
 {
   if (status == FINISH || !ok)
     {
-      request->Clear();
-      arena->Reset();
-      worker.push_arena(arena);
       delete this;
       return;
     }
@@ -216,10 +224,6 @@ syslogng::grpc::otel::LogsServiceCall::Proceed(bool ok)
 
   status = FINISH;
   responder.Finish(response, response_status, this);
-  request->Clear();
-  arena->Reset();
-  worker.push_arena(arena);
-
 }
 
 template <> void
@@ -227,9 +231,6 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
 {
   if (status == FINISH || !ok)
     {
-      request->Clear();
-      arena->Reset();
-      worker.push_arena(arena);
       delete this;
       return;
     }
@@ -281,9 +282,6 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
 
   status = FINISH;
   responder.Finish(response, response_status, this);
-  request->Clear();
-  arena->Reset();
-  worker.push_arena(arena);
 }
 
 #endif

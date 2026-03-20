@@ -261,7 +261,9 @@ syslogng::grpc::otel::SourceWorker::init()
   int num_arenas = 3 * owner.get_concurrent_requests();
   for (int i = 0; i < num_arenas; i++)
     {
-      auto arena = std::make_unique<google::protobuf::Arena>();
+      this->arena_buffers.push_back(std::vector<char>(32 * 1024 * 1024));
+      g_assert(arena_buffers.back().size() == 32 * 1024 * 1024);
+      auto arena = std::make_unique<google::protobuf::Arena>(arena_buffers.back().data(), arena_buffers.back().size());
       this->arena_pool.push(arena.get());
       this->arenas.push_back(std::move(arena));
     }

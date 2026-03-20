@@ -102,6 +102,7 @@ private:
   bool service_calls_registered;
   ::grpc::Alarm stop_scheduler;
   StopEventCall stop_call;
+  std::vector<std::vector<char>> arena_buffers;
   std::vector<std::unique_ptr<google::protobuf::Arena>> arenas;
   std::queue<google::protobuf::Arena *> arena_pool;
 };
