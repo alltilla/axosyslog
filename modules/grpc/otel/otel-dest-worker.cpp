@@ -529,10 +529,15 @@ DestWorker::flush(LogThreadedFlushMode mode)
 
 exit:
   client_context.reset();
-  logs_service_request->Clear();
-  metrics_service_request->Clear();
-  trace_service_request->Clear();
   fallback_msg_scope_logs = nullptr;
+
+  arena.Reset();
+  logs_service_request = google::protobuf::Arena::Create<ExportLogsServiceRequest>(&arena);
+  logs_service_response = google::protobuf::Arena::Create<ExportLogsServiceResponse>(&arena);
+  metrics_service_request = google::protobuf::Arena::Create<ExportMetricsServiceRequest>(&arena);
+  metrics_service_response = google::protobuf::Arena::Create<ExportMetricsServiceResponse>(&arena);
+  trace_service_request = google::protobuf::Arena::Create<ExportTraceServiceRequest>(&arena);
+  trace_service_response = google::protobuf::Arena::Create<ExportTraceServiceResponse>(&arena);
 
   logs_current_batch_bytes = metrics_current_batch_bytes = spans_current_batch_bytes = 0;
 
