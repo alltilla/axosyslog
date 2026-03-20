@@ -89,6 +89,7 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
 {
   if (status == FINISH || !ok)
     {
+      request->Clear();
       arena->Reset();
       worker.push_arena(arena);
       delete this;
@@ -142,6 +143,10 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
 
   status = FINISH;
   responder.Finish(response, response_status, this);
+
+  request->Clear();
+  arena->Reset();
+  worker.push_arena(arena);
 }
 
 template <> void
@@ -149,6 +154,7 @@ syslogng::grpc::otel::LogsServiceCall::Proceed(bool ok)
 {
   if (status == FINISH || !ok)
     {
+      request->Clear();
       arena->Reset();
       worker.push_arena(arena);
       delete this;
@@ -210,6 +216,10 @@ syslogng::grpc::otel::LogsServiceCall::Proceed(bool ok)
 
   status = FINISH;
   responder.Finish(response, response_status, this);
+  request->Clear();
+  arena->Reset();
+  worker.push_arena(arena);
+
 }
 
 template <> void
@@ -217,6 +227,7 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
 {
   if (status == FINISH || !ok)
     {
+      request->Clear();
       arena->Reset();
       worker.push_arena(arena);
       delete this;
@@ -270,6 +281,9 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
 
   status = FINISH;
   responder.Finish(response, response_status, this);
+  request->Clear();
+  arena->Reset();
+  worker.push_arena(arena);
 }
 
 #endif
