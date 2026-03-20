@@ -529,12 +529,6 @@ DestWorker::flush(LogThreadedFlushMode mode)
 exit:
   msg_error("before dest clear",  evt_tag_int("allocated", arena.SpaceAllocated()), evt_tag_int("used", arena.SpaceUsed()));
   client_context.reset();
-  logs_service_request->Clear();
-  metrics_service_request->Clear();
-  trace_service_request->Clear();
-  trace_service_response->Clear();
-  metrics_service_response->Clear();
-  logs_service_response->Clear();
   fallback_msg_scope_logs = nullptr;
 
   msg_error("dest arena reset",
