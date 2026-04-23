@@ -1,0 +1,4 @@
+rules:
+  unpinned-uses:
+    ignore:
+      - axosyslog-image-test.yml
