@@ -2,3 +2,7 @@ rules:
   unpinned-uses:
     ignore:
       - axosyslog-image-test.yml
+  unpinned-images:
+    ignore:
+      - devshell.yml
+      - devshell_light_valgrind.yml
