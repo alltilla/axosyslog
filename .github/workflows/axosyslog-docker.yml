@@ -90,7 +90,7 @@ jobs:
 
       - name: Extract metadata (AxoSyslog version) for Docker
         id: docker-metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf
         with:
           images: ${{ needs.prepare.outputs.image-name }}
           flavor: |
