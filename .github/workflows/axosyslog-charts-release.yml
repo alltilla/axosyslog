@@ -29,7 +29,7 @@ jobs:
           echo 'release-name-template: "{{ .Name }}-charts-{{ .Version }}"' > chart-releaser-config.yml
 
       - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.6.0
+        uses: helm/chart-releaser-action@cae68fefc6b5f367a0275617c9f83181ba54714f
         with:
           config: chart-releaser-config.yml
           charts_dir: charts
