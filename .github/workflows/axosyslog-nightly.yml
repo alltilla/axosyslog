@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Check previous nightly commit
         id: previous-nightly
-        uses: octokit/request-action@v2.x
+        uses: octokit/request-action@b91aabaa861c777dcdb14e2387e30eddf04619ae
         with:
           route: GET /repos/${{github.repository}}/actions/workflows/axosyslog-nightly.yml/runs?per_page=1&status=success
         env:
