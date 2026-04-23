@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout AxoSyslog source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Setup Git safedir
         run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
@@ -157,6 +159,8 @@ jobs:
     steps:
       - name: Checkout AxoSyslog source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Setup Git safedir
         run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
@@ -200,6 +204,7 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          persist-credentials: false
           fetch-depth: 2
 
       - name: Find base and head commits
@@ -266,6 +271,8 @@ jobs:
     steps:
       - name: Checkout AxoSyslog source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Setup Git safedir
         run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
@@ -322,6 +329,8 @@ jobs:
     steps:
       - name: Checkout AxoSyslog source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Setup Git safedir
         run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
@@ -345,6 +354,7 @@ jobs:
       - name: Checkout AxoSyslog source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Setup Git safedir
