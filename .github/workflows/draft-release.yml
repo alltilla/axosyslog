@@ -40,7 +40,7 @@ jobs:
       TARBALL_NAME: ${{ steps.setup-environment.outputs.TARBALL_NAME }}
     steps:
       - name: Checkout AxoSyslog source
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: "Comment: job started"
         if: github.event_name == 'pull_request'
@@ -98,7 +98,7 @@ jobs:
     needs: [create-release-tarball, create-packages] # TODO replace with upload-packages
     steps:
       - name: Checkout AxoSyslog source
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Download release tarball artifact
         uses: actions/download-artifact@v4

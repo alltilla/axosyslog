@@ -34,7 +34,7 @@ DOCKER_RUN_ARGS=-e USER_NAME_ON_HOST=$(shell whoami)	\
         -v $(DBLD_DIR):/dbld \
 	-v $(DBLD_DIR)/build:/build \
 	-v $(DBLD_DIR)/install:/install \
-	-e CONFIGURE_OPTS="$${CONFIGURE_OPTS:-$(CONFIGURE_OPTS)}" \
+	-e CONFIGURE_OPTS="--prefix=/install --disable-debug --enable-all-modules --disable-java --disable-java-modules --enable-ebpf --with-python=3 --enable-extra-warnings" \
 	-e CCACHE_DIR=/build/ccache \
 	-e MODE=$(MODE) \
 	-e VERSION=$(VERSION) \

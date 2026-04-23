@@ -67,7 +67,7 @@ jobs:
           echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> $GITHUB_ENV
 
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Download source tarball artifact
         if: inputs.snapshot-tarball-artifact != ''

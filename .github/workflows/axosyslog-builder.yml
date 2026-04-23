@@ -36,7 +36,7 @@ jobs:
           echo "platform-matrix=$PLATFORM_MATRIX" >> $GITHUB_OUTPUT
 
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - id: registry
         name: registry
@@ -75,7 +75,7 @@ jobs:
           echo "REBUILD_DEPS=$REBUILD_DEPS" >> $GITHUB_ENV
 
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
