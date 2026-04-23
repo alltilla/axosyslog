@@ -106,7 +106,7 @@ jobs:
           tar -cz -f /tmp/light-reports.tar.gz /tmp/light-reports
 
       - name: "Artifact: light-reports"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.prepare-light-reports.outcome == 'success'
         with:
           name: light-reports-${{ matrix.build-tool }}-${{ matrix.cc }}
@@ -120,7 +120,7 @@ jobs:
             gdb --ex="thread apply all bt full" --ex="quit" ${SYSLOG_NG_INSTALL_DIR}/sbin/syslog-ng --core {} \;
 
       - name: "Artifact: corefiles"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: failure()
         with:
           name: corefiles-${{ matrix.build-tool }}-${{ matrix.cc }}
