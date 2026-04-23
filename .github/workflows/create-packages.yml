@@ -13,22 +13,23 @@ on:
       distros:
         required: false
         type: string
-        default: '[
-          "debian-testing",
-          "debian-sid",
-          "debian-bullseye",
-          "debian-bookworm",
-          "debian-trixie",
-          "ubuntu-focal",
-          "ubuntu-jammy",
-          "ubuntu-noble",
-          "ubuntu-plucky",
-          "ubuntu-questing",
-          "almalinux-8",
-          "almalinux-9",
-          "fedora-41",
-          "fedora-42"
-        ]'
+        default: >-
+          [
+            "debian-testing",
+            "debian-sid",
+            "debian-bullseye",
+            "debian-bookworm",
+            "debian-trixie",
+            "ubuntu-focal",
+            "ubuntu-jammy",
+            "ubuntu-noble",
+            "ubuntu-plucky",
+            "ubuntu-questing",
+            "almalinux-8",
+            "almalinux-9",
+            "fedora-41",
+            "fedora-42"
+          ]
 
 
 jobs:
