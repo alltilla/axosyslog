@@ -52,7 +52,7 @@ jobs:
           path: docker/apkbuild/axoflow/axosyslog
 
       - name: Build Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
         with:
           context: docker
           file: docker/axosyslog.dockerfile
