@@ -47,6 +47,14 @@ jobs:
       fail-fast: false
 
     steps:
+      - name: Prepare environment
+        env:
+          DBLD_IMAGE_MODE: ${{ inputs.dbld-image-mode }}
+          DISTRO: ${{ matrix.distro }}
+        run: |
+          echo "DBLD_IMAGE_MODE=${DBLD_IMAGE_MODE}" >> $GITHUB_ENV
+          echo "DISTRO=${DISTRO}" >> $GITHUB_ENV
+
       - name: Download source tarball artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -60,21 +68,21 @@ jobs:
       - name: Prepare docker image
         working-directory: axosyslog
         run: |
-          if [[ "${{ inputs.dbld-image-mode }}" = "build" ]]
+          if [[ "${DBLD_IMAGE_MODE}" = "build" ]]
           then
-            ./dbld/rules image-${{ matrix.distro }}
-          elif [[ "${{ inputs.dbld-image-mode }}" = "cache" ]]
+            ./dbld/rules image-${DISTRO}
+          elif [[ "${DBLD_IMAGE_MODE}" = "cache" ]]
           then
-            ./dbld/rules cache-image-${{ matrix.distro }}
+            ./dbld/rules cache-image-${DISTRO}
           else
-            echo Unexpected input: dbld-image-mode=${{ inputs.dbld-image-mode }}
+            echo Unexpected input: dbld-image-mode=${DBLD_IMAGE_MODE}
             false
           fi
 
       - name: Create package
         working-directory: axosyslog
         run: |
-          ./dbld/rules package-${{ matrix.distro }}
+          ./dbld/rules package-${DISTRO}
 
       - name: Prepare package for artifact
         # We want to keep the directory structure starting with ${{ matrix.distro }},
@@ -83,7 +91,7 @@ jobs:
         # so let's make a temporary directory and move the ${{ matrix.distro }} directory there.
         run: |
           mkdir package
-          cp -r axosyslog/dbld/build/${{ matrix.distro }} package/
+          cp -r axosyslog/dbld/build/${DISTRO} package/
 
       - name: Store package as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
