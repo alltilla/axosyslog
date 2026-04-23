@@ -71,7 +71,7 @@ jobs:
 
       - name: Download source tarball artifact
         if: inputs.snapshot-tarball-artifact != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ inputs.snapshot-tarball-artifact }}
           path: docker/apkbuild/axoflow/axosyslog
@@ -129,7 +129,7 @@ jobs:
     needs: [prepare, image-build]
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: /tmp/digests
           pattern: digests-*
