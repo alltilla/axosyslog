@@ -32,9 +32,12 @@ on:
           ]
 
 
+permissions: {}
+
 jobs:
   create-packages:
     name: ${{ matrix.distro }}
+    permissions: {}
 
     runs-on: ubuntu-latest
 
