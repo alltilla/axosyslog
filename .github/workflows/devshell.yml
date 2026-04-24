@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   general:
+    name: General
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/axoflow/axosyslog-dbld-devshell:latest
@@ -155,6 +156,7 @@ jobs:
           path: ${{ env.COREFILES_DIR }}
 
   distcheck:
+    name: Distcheck
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/axoflow/axosyslog-dbld-devshell:latest
@@ -202,6 +204,7 @@ jobs:
           exec_prop_check "make distcheck -j 8 V=1"
 
   callgrind:
+    name: Callgrind
     runs-on: ubuntu-latest
 
     steps:
@@ -270,6 +273,7 @@ jobs:
           path: dbld/build/callgrind/*/callgrind_annotate.txt
 
   style-check:
+    name: Style check
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/axoflow/axosyslog-dbld-devshell:latest
@@ -326,6 +330,7 @@ jobs:
           path: light-style-problems.diff
 
   copyright-check:
+    name: Copyright check
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/axoflow/axosyslog-dbld-devshell:latest
@@ -352,6 +357,7 @@ jobs:
           path: copyright-run.log
 
   commits-check:
+    name: Commits check
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/axoflow/axosyslog-dbld-devshell:latest

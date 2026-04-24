@@ -23,6 +23,7 @@ defaults:
 
 jobs:
   axosyslog:
+    name: Lint Helm charts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
