@@ -136,6 +136,11 @@ log_filterx_pipe_queue(LogPipe *s, LogMessage *msg, const LogPathOptions *path_o
   FilterXEvalContext eval_context;
   FilterXEvalContext *previous_context = path_options->filterx_context;
 
+  /* AXOSYSLOG-CI-TEST: artificial work to shift the callgrind instruction count; do not merge */
+  volatile guint64 _cg_test_sink = 0;
+  for (int _cg_test_i = 0; _cg_test_i < 5000000; _cg_test_i++)
+    _cg_test_sink++;
+
   LogMessagePin pin = log_msg_pin_payload(msg);
   FILTERX_EVAL_BEGIN_CONTEXT(eval_context, previous_context, msg, self->scope_var_layout)
   {
