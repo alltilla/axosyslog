@@ -135,6 +135,7 @@ log_filterx_pipe_queue(LogPipe *s, LogMessage *msg, const LogPathOptions *path_o
   LogFilterXPipe *self = (LogFilterXPipe *) s;
   FilterXEvalContext eval_context;
   FilterXEvalContext *previous_context = path_options->filterx_context;
+  /* AXOSYSLOG-CI-TEST: comment-only filterx change; expected zero instruction-count diff; do not merge */
 
   LogMessagePin pin = log_msg_pin_payload(msg);
   FILTERX_EVAL_BEGIN_CONTEXT(eval_context, previous_context, msg, self->scope_var_layout)
