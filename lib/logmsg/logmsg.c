@@ -24,6 +24,7 @@
 #include "logmsg/logmsg.h"
 #include "str-utils.h"
 #include "str-repr/encode.h"
+/* AXOSYSLOG-CI-TEST: non-filterx change; expected no callgrind comment; do not merge */
 #include "messages.h"
 #include "logpipe.h"
 #include "timeutils/cache.h"
