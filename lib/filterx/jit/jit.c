@@ -595,7 +595,7 @@ _parallel_compile_worker(gpointer data, gpointer user_data)
 {
   FilterXJIT *self = ((gpointer *) user_data)[0];
   LLVMMemoryBufferRef *block_objs = ((gpointer *) user_data)[1];
-  guint bucket = GPOINTER_TO_UINT(data);
+  guint bucket = GPOINTER_TO_UINT(data) - 1; /* +1 on push: GThreadPool rejects a NULL task pointer */
   guint nb = GPOINTER_TO_UINT(((gpointer *) user_data)[2]);
 
   LLVMContextRef ctx = LLVMContextCreate();
@@ -615,17 +615,22 @@ _finalize_parallel(FilterXJIT *self, GError **error)
   if (nblocks == 0)
     return TRUE;
 
+  gint threads = (gint) g_get_num_processors();
+
   guint n_buckets = (guint) g_get_num_processors(); /* one compile unit per core */
   if (n_buckets > nblocks)
     n_buckets = nblocks;
 
-  msg_trace("FilterX JIT finalize", evt_tag_int("blocks", nblocks), evt_tag_int("buckets", n_buckets));
+  msg_trace("FilterX JIT parallel finalize", evt_tag_int("blocks", nblocks),
+            evt_tag_int("buckets", n_buckets), evt_tag_int("threads", threads));
 
   LLVMMemoryBufferRef *block_objs = g_new0(LLVMMemoryBufferRef, n_buckets);
   gpointer worker_ctx[] = { self, block_objs, GUINT_TO_POINTER(n_buckets) };
 
+  GThreadPool *pool = g_thread_pool_new(_parallel_compile_worker, worker_ctx, threads, TRUE, NULL);
   for (guint b = 0; b < n_buckets; b++)
-    _parallel_compile_worker(GUINT_TO_POINTER(b), worker_ctx);
+    g_thread_pool_push(pool, GUINT_TO_POINTER(b + 1), NULL); /* +1: NULL task is rejected by the pool */
+  g_thread_pool_free(pool, FALSE, TRUE); /* wait for all workers */
 
   LLVMOrcJITDylibRef dylib = LLVMOrcLLJITGetMainJITDylib(self->j);
   gboolean ok = TRUE;
