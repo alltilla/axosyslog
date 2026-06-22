@@ -50,6 +50,9 @@ struct _FilterXJIT
   FilterXIRValue current_ir_block;
   LLVMMetadataRef current_debug_info_block;
   FilterXIRValue current_eval_context;
+  LLVMValueRef current_ptr_table_param;
+  GArray *current_block_ptrs;
+  gchar *current_block_name;
 
   FilterXJITFFI ffi;
 
@@ -66,6 +69,9 @@ struct _FilterXJIT
     LLVMMemoryBufferRef libfilterx_bc;
     GPtrArray *pending_blocks;
   } compile;
+
+  /* each block's instance-pointer table, looked up by block name */
+  GHashTable *block_tables;
 };
 
 typedef struct _FilterXJITPendingBlock

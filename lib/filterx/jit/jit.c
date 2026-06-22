@@ -291,6 +291,12 @@ filterx_jit_ir_add_new_block(FilterXJIT *self, const gchar *block_name)
   self->current_eval_context = LLVMGetParam(self->current_ir_block, 0);
   LLVMSetValueName2(self->current_eval_context, "eval_context", strlen("eval_context"));
 
+  self->current_ptr_table_param = LLVMGetParam(self->current_ir_block, 1);
+  LLVMSetValueName2(self->current_ptr_table_param, "ptr_table", strlen("ptr_table"));
+  g_array_set_size(self->current_block_ptrs, 0);
+  g_free(self->current_block_name);
+  self->current_block_name = g_strdup(block_name);
+
   FilterXIRSequence entry = filterx_jit_ir_add_new_sequence_to_block(self, "entry", self->current_ir_block);
   filterx_jit_ir_set_insert_point_to_sequence_tail(self, entry);
 }
@@ -462,10 +468,17 @@ _emit_block_llvm_ir_debug_info(FilterXJIT *self, GError **error)
 
 #endif
 
-/* Capture the finished block's IR as a bitcode buffer for compilation in finalize(). */
+/* Capture the finished block's IR as a bitcode buffer for compilation in finalize(). The pointers the
+ * block loads are recorded as its ptr_table, supplied to the compiled function at call time. */
 static void
 _capture_block_for_parallel_compile(FilterXJIT *self)
 {
+  guint nptrs = self->current_block_ptrs->len;
+  gpointer *table = g_new(gpointer, nptrs ? nptrs : 1);
+  if (nptrs)
+    memcpy(table, self->current_block_ptrs->data, nptrs * sizeof(gpointer));
+  g_hash_table_insert(self->block_tables, g_strdup(self->current_block_name), table);
+
 #if FILTERX_JIT_DEBUG_INFO_LLVM_IR_SUPPORTED
   if (self->debug_info_mode == FILTERX_JIT_DEBUG_INFO_LLVM_IR)
     {
@@ -702,6 +715,12 @@ filterx_jit_lookup(FilterXJIT *self, const gchar *block_name, GError **error)
   return fx_block_addr;
 }
 
+gpointer *
+filterx_jit_get_block_ptr_table(FilterXJIT *self, const gchar *block_name)
+{
+  return g_hash_table_lookup(self->block_tables, block_name);
+}
+
 /*
  * Allow calling into C functions from JIT
  *
@@ -806,6 +825,8 @@ filterx_jit_new(const gchar *module_name, FilterXJITDebugInfo debug_info, GError
   self->debug_info_mode = debug_info;
   self->debug_ir_text_memfd = -1;
   self->compile.pending_blocks = g_ptr_array_new_with_free_func((GDestroyNotify) _pending_block_free);
+  self->current_block_ptrs = g_array_new(FALSE, FALSE, sizeof(gpointer));
+  self->block_tables = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 
 #if SYSLOG_NG_HAVE_DECL_LLVMORCCREATENEWTHREADSAFECONTEXTFROMLLVMCONTEXT
   self->ctx = LLVMContextCreate();
@@ -896,6 +917,12 @@ filterx_jit_free(FilterXJIT *self)
 
   msg_trace("FilterXJIT destroyed", evt_tag_str("module_name", self->mod_name));
 
+  if (self->current_block_ptrs)
+    g_array_free(self->current_block_ptrs, TRUE);
+  g_free(self->current_block_name);
+  if (self->block_tables)
+    g_hash_table_destroy(self->block_tables);
+
   g_free(self->mod_name);
   g_free(self);
 }
@@ -971,6 +998,10 @@ gboolean filterx_jit_finalize(FilterXJIT *self, GError **error)
   g_assert_not_reached();
 }
 FilterXJITAddress filterx_jit_lookup(FilterXJIT *self, const gchar *block_name, GError **error)
+{
+  g_assert_not_reached();
+}
+gpointer *filterx_jit_get_block_ptr_table(FilterXJIT *self, const gchar *block_name)
 {
   g_assert_not_reached();
 }
