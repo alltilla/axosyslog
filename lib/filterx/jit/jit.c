@@ -229,6 +229,28 @@ _inherit_libfilterx_function_attributes(FilterXJIT *self, FilterXIRValue dest)
 static void _capture_block_for_parallel_compile(FilterXJIT *self);
 static LLVMTargetMachineRef _create_target_machine(FilterXJIT *self, GError **error);
 
+/* set up the per-block module's debug flags, DIBuilder and compile unit */
+static void
+_setup_block_debug_info(FilterXJIT *self)
+{
+  LLVMValueRef di_version = LLVMConstInt(LLVMInt32TypeInContext(self->ctx), LLVMDebugMetadataVersion(), FALSE);
+  LLVMValueRef dwarf_version = LLVMConstInt(LLVMInt32TypeInContext(self->ctx), 5, FALSE);
+
+  LLVMAddModuleFlag(self->mod, LLVMModuleFlagBehaviorWarning, DEBUG_VERSION_KEY, strlen(DEBUG_VERSION_KEY),
+                    LLVMValueAsMetadata(di_version));
+  LLVMAddModuleFlag(self->mod, LLVMModuleFlagBehaviorWarning, DWARF_VERSION_KEY, strlen(DWARF_VERSION_KEY),
+                    LLVMValueAsMetadata(dwarf_version));
+
+  self->debug = LLVMCreateDIBuilder(self->mod);
+
+  const gchar *dummy_file_name = "<filterx>";
+  LLVMMetadataRef file = LLVMDIBuilderCreateFile(self->debug, dummy_file_name, strlen(dummy_file_name), "", 0);
+
+  const gchar *producer = "AxoSyslog FilterX JIT";
+  LLVMDIBuilderCreateCompileUnit(self->debug, LLVMDWARFSourceLanguageC, file, producer, strlen(producer), FALSE, "", 0,
+                                 0, "", 0, LLVMDWARFEmissionFull, 0, FALSE, FALSE, "", 0, "", 0);
+}
+
 void
 filterx_jit_ir_add_new_block(FilterXJIT *self, const gchar *block_name)
 {
@@ -241,6 +263,7 @@ filterx_jit_ir_add_new_block(FilterXJIT *self, const gchar *block_name)
   LLVMSetTarget(self->mod, LLVMGetTarget(self->libfilterx));
   LLVMSetDataLayout(self->mod, LLVMGetDataLayoutStr(self->libfilterx));
   filterx_jit_ffi_init(self);
+  _setup_block_debug_info(self);
 
   gchar *fqn = _create_fully_qualified_block_name(self, block_name);
   self->current_ir_block = LLVMAddFunction(self->mod, fqn, _block_function_type(self));
@@ -431,12 +454,21 @@ _emit_llvm_ir_debug_info(FilterXJIT *self, GError **error)
 static void
 _capture_block_for_parallel_compile(FilterXJIT *self)
 {
+  /* finalize the per-block debug info before the module is serialized */
+  if (self->debug)
+    LLVMDIBuilderFinalize(self->debug);
+
   gchar mod_name[256];
   g_snprintf(mod_name, sizeof(mod_name), "%s#%u", self->mod_name, self->compile.pending_blocks->len);
 
   FilterXJITPendingBlock *pb = _pending_block_new(self->mod, mod_name);
   g_ptr_array_add(self->compile.pending_blocks, pb);
 
+  if (self->debug)
+    {
+      LLVMDisposeDIBuilder(self->debug);
+      self->debug = NULL;
+    }
   LLVMDisposeModule(self->mod);
   self->mod = NULL;
 }
@@ -722,22 +754,7 @@ _setup_debug_info(FilterXJIT *self, LLVMOrcLLJITBuilderRef jit_builder)
 {
   LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator(jit_builder, _create_object_layer_with_gdb_listener, NULL);
 
-  LLVMValueRef di_version = LLVMConstInt(LLVMInt32TypeInContext(self->ctx), LLVMDebugMetadataVersion(), FALSE);
-  LLVMValueRef dwarf_version = LLVMConstInt(LLVMInt32TypeInContext(self->ctx), 5, FALSE);
-
-  LLVMAddModuleFlag(self->mod, LLVMModuleFlagBehaviorWarning, DEBUG_VERSION_KEY, strlen(DEBUG_VERSION_KEY),
-                    LLVMValueAsMetadata(di_version));
-  LLVMAddModuleFlag(self->mod, LLVMModuleFlagBehaviorWarning, DWARF_VERSION_KEY, strlen(DWARF_VERSION_KEY),
-                    LLVMValueAsMetadata(dwarf_version));
-
-  self->debug = LLVMCreateDIBuilder(self->mod);
-
-  const gchar *dummy_file_name = "<filterx>";
-  LLVMMetadataRef file = LLVMDIBuilderCreateFile(self->debug, dummy_file_name, strlen(dummy_file_name), "", 0);
-
-  const gchar *producer = "AxoSyslog FilterX JIT";
-  LLVMDIBuilderCreateCompileUnit(self->debug, LLVMDWARFSourceLanguageC, file, producer, strlen(producer), FALSE, "", 0,
-                                 0, "", 0, LLVMDWARFEmissionFull, 0, FALSE, FALSE, "", 0, "", 0);
+  /* debug info is set up per block; here we only install the gdb JIT event listener */
 }
 
 FilterXJIT *
