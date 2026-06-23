@@ -72,6 +72,16 @@ struct _FilterXJIT
 
   /* each block's instance-pointer table, looked up by block name */
   GHashTable *block_tables;
+
+  /* deduplication: identical blocks (same generated code) share one compiled __fx_block_<hash>
+   * function; later duplicates reuse it */
+  struct
+  {
+    GHashTable *block_symbol;
+    GHashTable *seen_hashes;
+    guint total;
+    guint unique;
+  } dedup;
 };
 
 typedef struct _FilterXJITPendingBlock
