@@ -184,8 +184,9 @@ _advance_batch(LogProtoTextClient *self, gsize written)
     }
 }
 
-/* write the queued batch out with a single writev(), resuming from the head's
- * offset when an earlier short write left a tail behind. */
+/* write the queued batch out, using a plain write() for a single chunk and a
+ * writev() for several, resuming from the head's offset when an earlier short
+ * write left a tail behind. */
 static LogProtoStatus
 _flush_batch(LogProtoTextClient *self)
 {
@@ -200,7 +201,12 @@ _flush_batch(LogProtoTextClient *self)
   iov[0].iov_base = (guchar *) first.iov_base + self->batch.partial_pos;
   iov[0].iov_len = first.iov_len - self->batch.partial_pos;
 
-  gssize rc = log_transport_stack_writev(&self->super.transport_stack, iov, iov_count);
+  /* a single chunk doesn't need vectored I/O */
+  gssize rc;
+  if (iov_count == 1)
+    rc = log_transport_stack_write(&self->super.transport_stack, iov[0].iov_base, iov[0].iov_len);
+  else
+    rc = log_transport_stack_writev(&self->super.transport_stack, iov, iov_count);
   iov[0] = first;
 
   if (rc < 0)
