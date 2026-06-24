@@ -42,6 +42,12 @@ typedef struct _LogTransportTLS
 
   GByteArray *writev_buf;
 
+  /* a blocked SSL_write() must be repeated with the identical buffer; remember
+   * the pending one so any later write()/writev() replays it unchanged */
+  gboolean write_blocked;
+  gconstpointer write_blocked_buf;
+  gsize write_blocked_len;
+
   StatsClusterKeyBuilder *kb;
 } LogTransportTLS;
 
@@ -333,9 +339,14 @@ log_transport_tls_write_method(LogTransport *s, const gpointer buf, gsize buflen
   gint ssl_error;
   gint rc;
 
+  /* OpenSSL requires a blocked SSL_write() to be repeated with the identical
+   * buffer; replay the pending one, ignoring whatever the caller passes now */
+  gconstpointer write_buf = self->write_blocked ? self->write_blocked_buf : (gconstpointer) buf;
+  gsize write_len = self->write_blocked ? self->write_blocked_len : buflen;
+
   self->super.super.cond = LTIO_NOTHING;
 
-  rc = SSL_write(self->tls_session->ssl, buf, buflen);
+  rc = SSL_write(self->tls_session->ssl, write_buf, write_len);
 
   if (rc < 0)
     {
@@ -375,6 +386,12 @@ log_transport_tls_write_method(LogTransport *s, const gpointer buf, gsize buflen
         }
     }
 
+  self->write_blocked = (rc < 0 && errno == EAGAIN);
+  if (self->write_blocked)
+    {
+      self->write_blocked_buf = write_buf;
+      self->write_blocked_len = write_len;
+    }
   return rc;
 
 tls_error:
@@ -386,6 +403,7 @@ tls_error:
             tls_context_format_location_tag(self->tls_session->ctx));
   ERR_clear_error();
 
+  self->write_blocked = FALSE;
   errno = EPIPE;
   return -1;
 }
@@ -398,9 +416,12 @@ log_transport_tls_writev_method(LogTransport *s, struct iovec *iov, gint iov_cou
   if (G_UNLIKELY(!self->writev_buf))
     self->writev_buf = g_byte_array_new();
 
-  g_byte_array_set_size(self->writev_buf, 0);
-  for (gint i = 0; i < iov_count; i++)
-    g_byte_array_append(self->writev_buf, iov[i].iov_base, iov[i].iov_len);
+  if (G_LIKELY(!self->write_blocked))
+    {
+      g_byte_array_set_size(self->writev_buf, 0);
+      for (gint i = 0; i < iov_count; i++)
+        g_byte_array_append(self->writev_buf, iov[i].iov_base, iov[i].iov_len);
+    }
 
   return log_transport_tls_write_method(s, self->writev_buf->data, self->writev_buf->len);
 }
