@@ -459,20 +459,19 @@ _parse_bitcode_copy(LLVMContextRef ctx, LLVMMemoryBufferRef bc, const gchar *wha
   return mod;
 }
 
-/* Link libfilterx (if present) and this bucket's blocks into a single module; NULL on failure. */
 static LLVMModuleRef
 _link_bucket_module(FilterXJIT *self, LLVMContextRef ctx, guint bucket, guint nb)
 {
-  LLVMModuleRef mod = NULL;
-  if (self->compile.libfilterx_bc)
-    {
-      mod = _parse_bitcode_copy(ctx, self->compile.libfilterx_bc, "libfilterx");
-      if (!mod)
-        return NULL;
-      LLVMValueRef tmpl = LLVMGetNamedFunction(mod, "fx_jit_attribute_template");
-      if (tmpl && !LLVMIsDeclaration(tmpl))
-        LLVMSetLinkage(tmpl, LLVMInternalLinkage);
-    }
+  g_assert(self->compile.libfilterx_bc);
+
+  LLVMModuleRef mod = _parse_bitcode_copy(ctx, self->compile.libfilterx_bc, "libfilterx");
+  if (!mod)
+    return NULL;
+
+  /* the lone libfilterx symbol left external (bc-loader.c); make this bucket's copy internal so the bucket objects don't clash on a duplicate definition */
+  LLVMValueRef tmpl = LLVMGetNamedFunction(mod, "fx_jit_attribute_template");
+  if (tmpl && !LLVMIsDeclaration(tmpl))
+    LLVMSetLinkage(tmpl, LLVMInternalLinkage);
 
   guint linked = 0;
   for (guint i = bucket; i < self->compile.pending_blocks->len; i += nb)
@@ -481,22 +480,23 @@ _link_bucket_module(FilterXJIT *self, LLVMContextRef ctx, guint bucket, guint nb
       LLVMModuleRef bm = _parse_bitcode_copy(ctx, pb->bc, pb->name);
       if (!bm)
         goto error;
-      if (!mod)
-        mod = bm; /* no-lib edge case: first block becomes the base */
-      else if (LLVMLinkModules2(mod, bm)) /* bm consumed */
+
+      if (LLVMLinkModules2(mod, bm)) /* bm consumed */
         {
           msg_error("FilterX JIT: bucket worker failed to link block", evt_tag_str("block", pb->name));
           goto error;
         }
+
       linked++;
     }
-  if (!mod || linked == 0)
+
+  if (linked == 0)
     goto error;
+
   return mod;
 
 error:
-  if (mod)
-    LLVMDisposeModule(mod);
+  LLVMDisposeModule(mod);
   return NULL;
 }
 
@@ -532,8 +532,6 @@ _compile_module_to_object(FilterXJIT *self, LLVMModuleRef mod, guint bucket)
   return obj;
 }
 
-/* Compile one bucket (a libfilterx clone with every (i % n_buckets == bucket) block linked in) to a
- * native object; on failure block_objs[bucket] stays NULL and those blocks fall back to the interpreter. */
 static void
 _parallel_compile_worker(gpointer data, gpointer user_data)
 {
@@ -568,7 +566,7 @@ _finalize_parallel(FilterXJIT *self, GError **error)
   LLVMMemoryBufferRef *block_objs = g_new0(LLVMMemoryBufferRef, n_buckets);
   gpointer worker_ctx[] = { self, block_objs, GUINT_TO_POINTER(n_buckets) };
 
-  for (guint b = 0; b < n_buckets; b++)
+  for (guint b = 0; b < n_buckets; b++) /* TODO: pass to worker threads */
     _parallel_compile_worker(GUINT_TO_POINTER(b), worker_ctx);
 
   LLVMOrcJITDylibRef dylib = LLVMOrcLLJITGetMainJITDylib(self->j);
@@ -576,7 +574,10 @@ _finalize_parallel(FilterXJIT *self, GError **error)
   for (guint b = 0; b < n_buckets; b++)
     {
       if (!block_objs[b])
-        continue; /* worker logged the failure; that bucket's blocks fall back to interpreter */
+        {
+          /* worker failure: that bucket's blocks fall back to interpreter */
+          continue;
+        }
 
       LLVMErrorRef err = LLVMOrcLLJITAddObjectFile(self->j, dylib, block_objs[b]);
       block_objs[b] = NULL; /* consumed by AddObjectFile, even on error */
@@ -588,10 +589,11 @@ _finalize_parallel(FilterXJIT *self, GError **error)
         }
     }
 
-  /* a failed AddObjectFile aborts the loop above; dispose the buckets it never reached */
   for (guint b = 0; b < n_buckets; b++)
-    if (block_objs[b])
-      LLVMDisposeMemoryBuffer(block_objs[b]);
+    {
+      if (block_objs[b])
+        LLVMDisposeMemoryBuffer(block_objs[b]);
+    }
   g_free(block_objs);
   return ok;
 }
@@ -783,8 +785,7 @@ filterx_jit_new(const gchar *module_name, FilterXJITDebugInfo debug_info, GError
   _setup_optimizations(self);
 
   /* snapshot libfilterx as bitcode for each worker to parse into its own context */
-  if (self->libfilterx)
-    self->compile.libfilterx_bc = LLVMWriteBitcodeToMemoryBuffer(self->libfilterx);
+  self->compile.libfilterx_bc = LLVMWriteBitcodeToMemoryBuffer(self->libfilterx);
 
   /* the FFI is declared per block module in filterx_jit_ir_add_new_block */
 
