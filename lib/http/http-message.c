@@ -427,6 +427,12 @@ http_response_generate_raw_response(HTTPResponse *self)
   }
 
   const gchar *status_line = http_response_status_code_to_status_line(self->status_code);
+  gchar status_line_fallback[8];
+  if (!status_line)
+    {
+      g_snprintf(status_line_fallback, sizeof(status_line_fallback), "%d", self->status_code);
+      status_line = status_line_fallback;
+    }
   gsize status_line_length = strlen(status_line);
 
   g_byte_array_append(raw_response, (const guint8 *) status_line, status_line_length);
