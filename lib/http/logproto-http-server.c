@@ -61,8 +61,8 @@ struct _LogProtoHTTPServer
   HTTPParser *http_parser;
 
   GQueue *pending_log_messages;
+  LogTransportAuxData request_aux;
 
-  // pass LogTransportAuxData
   ExtractLogMessagesCallback extract_log_messages;
   CreateResponseCallback create_response;
 };
@@ -401,6 +401,8 @@ log_proto_http_server_process(LogProtoServer *s, LogMessage **log_message, LogTr
           HTTPRequest *http_request = log_proto_http_server_receive_request(self, aux, &status);
           if (http_request)
             {
+              if (aux)
+                log_transport_aux_data_copy(&self->request_aux, aux);
               log_proto_http_server_extract_log_messages_and_create_response(self, http_request);
               http_request_free(http_request);
             }
@@ -413,7 +415,11 @@ log_proto_http_server_process(LogProtoServer *s, LogMessage **log_message, LogTr
         case STATE_PROCESS_LOG_MESSAGES:
           *log_message = log_proto_http_server_pop_next_log_message(self);
           if (*log_message)
-            return LPS_SUCCESS;
+            {
+              if (aux)
+                log_transport_aux_data_copy(aux, &self->request_aux);
+              return LPS_SUCCESS;
+            }
           break;
 
         case STATE_SEND_HTTP_RESPONSE:
@@ -447,6 +453,8 @@ log_proto_http_server_free(LogProtoServer *s)
         log_msg_unref(msg);
       g_queue_free(self->pending_log_messages);
     }
+
+  log_transport_aux_data_destroy(&self->request_aux);
 
   buffer_deallocate(&self->in_buffer);
   buffer_deallocate(&self->out_buffer);
