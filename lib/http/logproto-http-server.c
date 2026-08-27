@@ -34,6 +34,9 @@
 /* seconds a connection may make no progress before it is closed */
 #define HTTP_CONNECTION_IDLE_TIMEOUT 60
 
+/* initial per-connection read buffer; grows on demand up to the request-size limit */
+#define HTTP_INITIAL_BUFFER_SIZE 8192
+
 typedef enum _State
 {
   STATE_RECEIVE_HTTP_REQUEST,
@@ -128,8 +131,12 @@ _convert_io_status_to_log_proto_status(GIOStatus io_status)
 static GIOStatus
 log_proto_http_server_fetch_data(LogProtoHTTPServer *self, LogTransportAuxData *aux)
 {
+  gsize max_capacity = self->super.options->init_buffer_size;
+
   if (G_UNLIKELY(!buffer_allocated(&self->in_buffer)))
-    buffer_allocate(&self->in_buffer, self->super.options->init_buffer_size);
+    buffer_allocate(&self->in_buffer, MIN(HTTP_INITIAL_BUFFER_SIZE, max_capacity));
+  else if (buffer_unused_capacity(&self->in_buffer) == 0 && self->in_buffer.capacity < max_capacity)
+    buffer_grow(&self->in_buffer, MIN(self->in_buffer.capacity * 2, max_capacity));
 
   gssize rc = log_transport_stack_read(&self->super.transport_stack, buffer_end(&self->in_buffer),
                                        buffer_unused_capacity(&self->in_buffer), aux);
@@ -233,7 +240,7 @@ log_proto_http_server_parse_request(LogProtoHTTPServer *self, LogProtoStatus sta
       return (HTTPRequest *) http_parser_steal_message(self->http_parser);
     }
 
-  if (self->in_buffer.size >= self->in_buffer.capacity) //TODO: self->super.super.options->max_msg_size
+  if (self->in_buffer.size >= self->super.options->init_buffer_size)
     {
       log_proto_http_server_set_error_response(self, HTTP_PAYLOAD_TOO_LARGE);
       msg_error("HTTP request is too long");

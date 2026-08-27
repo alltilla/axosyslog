@@ -54,6 +54,13 @@ buffer_allocate(Buffer *buffer, gsize capacity)
 }
 
 static inline void
+buffer_grow(Buffer *buffer, gsize capacity)
+{
+  buffer->buffer = g_realloc(buffer->buffer, capacity);
+  buffer->capacity = capacity;
+}
+
+static inline void
 buffer_deallocate(Buffer *buffer)
 {
   buffer_reset(buffer);
