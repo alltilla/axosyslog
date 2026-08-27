@@ -80,7 +80,9 @@ log_proto_http_server_poll_prepare(LogProtoServer *s, GIOCondition *cond, gint *
   gboolean unprocessed_data_in_buffer;
   if (self->state == STATE_SEND_HTTP_RESPONSE || self->state == STATE_HTTP_ERROR)
     {
-      unprocessed_data_in_buffer = buffer_size(&self->out_buffer) != 0;
+      /* a pending response can only progress once the socket is writable, so
+       * we must wait for G_IO_OUT instead of forcing an immediate re-fetch */
+      unprocessed_data_in_buffer = FALSE;
       proto_io_direction = G_IO_OUT;
     }
   else if (self->state == STATE_RECEIVE_HTTP_REQUEST)
