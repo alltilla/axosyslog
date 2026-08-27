@@ -38,6 +38,7 @@ struct _HTTPParser
 
   GString *current_header_field_name;
   GString *current_header_field_value;
+  gboolean current_header_has_value;
 };
 
 static gint _message_begin(llhttp_t *parser);
@@ -151,6 +152,8 @@ http_parser_signal_end_of_stream(HTTPParser *self)
   return self->finish_error == HPE_OK;
 }
 
+static void http_parser_reset_header(HTTPParser *self);
+
 void
 http_parser_skip_message(HTTPParser *self)
 {
@@ -158,6 +161,7 @@ http_parser_skip_message(HTTPParser *self)
   self->current_message = NULL;
   self->message_complete = FALSE;
   self->finish_error = HPE_OK;
+  http_parser_reset_header(self);
   llhttp_reset(&self->parser);
 }
 
@@ -177,6 +181,7 @@ http_parser_steal_message(HTTPParser *self)
   self->current_message = NULL;
   self->message_complete = FALSE;
   self->finish_error = HPE_OK;
+  http_parser_reset_header(self);
   llhttp_reset(&self->parser);
 
   return msg;
@@ -199,23 +204,18 @@ http_parser_get_last_error(const HTTPParser *self)
   return NULL;
 }
 
-static gboolean
-http_parser_previous_header_exists(HTTPParser *self)
-{
-  return self->current_header_field_value->len != 0 && self->current_header_field_name->len != 0;
-}
-
 static void
 http_parser_reset_header(HTTPParser *self)
 {
   g_string_truncate(self->current_header_field_name, 0);
   g_string_truncate(self->current_header_field_value, 0);
+  self->current_header_has_value = FALSE;
 }
 
 static void
 http_parser_finalize_previous_header(HTTPParser *self)
 {
-  if (!http_parser_previous_header_exists(self))
+  if (self->current_header_field_name->len == 0)
     return;
 
   http_message_add_header_normalized_in_place(self->current_message,
@@ -282,7 +282,10 @@ _header_field(llhttp_t *parser, const gchar *data, gsize length)
 {
   HTTPParser *self = parser->data;
 
-  http_parser_finalize_previous_header(self);
+  /* llhttp signals the previous header is complete by starting a new field
+   * after it emitted its value (which may be empty) */
+  if (self->current_header_has_value)
+    http_parser_finalize_previous_header(self);
 
   g_string_append_len(self->current_header_field_name, data, length);
   return 0;
@@ -293,6 +296,7 @@ _header_value(llhttp_t *parser, const gchar *data, gsize length)
 {
   HTTPParser *self = parser->data;
 
+  self->current_header_has_value = TRUE;
   g_string_append_len(self->current_header_field_value, data, length);
   return 0;
 }
