@@ -31,6 +31,9 @@
 
 #include <errno.h>
 
+/* seconds a connection may make no progress before it is closed */
+#define HTTP_CONNECTION_IDLE_TIMEOUT 60
+
 typedef enum _State
 {
   STATE_RECEIVE_HTTP_REQUEST,
@@ -71,9 +74,9 @@ struct _LogProtoHTTPServer
 static LogProtoPrepareAction
 log_proto_http_server_poll_prepare(LogProtoServer *s, GIOCondition *cond, gint *timeout)
 {
-  /* TODO timeout */
-
   LogProtoHTTPServer *self = (LogProtoHTTPServer *) s;
+
+  *timeout = HTTP_CONNECTION_IDLE_TIMEOUT;
 
   if (self->state == STATE_PROCESS_LOG_MESSAGES)
     return LPPA_FORCE_SCHEDULE_FETCH;
