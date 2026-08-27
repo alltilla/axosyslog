@@ -27,6 +27,9 @@
 
 #define HPE_UPGRADE_NOT_SUPPORTED 501
 
+/* bound headers per message: the header table hash is not collision-resistant */
+#define MAX_MESSAGE_HEADERS 1000
+
 struct _HTTPParser
 {
   llhttp_t parser;
@@ -39,6 +42,7 @@ struct _HTTPParser
   GString *current_header_field_name;
   GString *current_header_field_value;
   gboolean current_header_has_value;
+  guint header_count;
 };
 
 static gint _message_begin(llhttp_t *parser);
@@ -229,6 +233,8 @@ _message_begin(llhttp_t *parser)
 {
   HTTPParser *self = parser->data;
 
+  self->header_count = 0;
+
   if (!self->current_message)
     self->current_message = _create_message(self->parser.type);
 
@@ -286,6 +292,13 @@ _header_field(llhttp_t *parser, const gchar *data, gsize length)
    * after it emitted its value (which may be empty) */
   if (self->current_header_has_value)
     http_parser_finalize_previous_header(self);
+
+  if (self->current_header_field_name->len == 0)
+    {
+      if (self->header_count >= MAX_MESSAGE_HEADERS)
+        return HPE_USER;
+      self->header_count++;
+    }
 
   g_string_append_len(self->current_header_field_name, data, length);
   return 0;
