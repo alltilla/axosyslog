@@ -27,6 +27,7 @@
 #include "http-message-internal.h"
 #include "syslog-ng.h"
 #include "messages.h"
+#include "logmsg/logmsg.h"
 
 #include <errno.h>
 
@@ -438,6 +439,14 @@ static void
 log_proto_http_server_free(LogProtoServer *s)
 {
   LogProtoHTTPServer *self = (LogProtoHTTPServer *) s;
+
+  if (self->pending_log_messages)
+    {
+      LogMessage *msg;
+      while ((msg = g_queue_pop_head(self->pending_log_messages)))
+        log_msg_unref(msg);
+      g_queue_free(self->pending_log_messages);
+    }
 
   buffer_deallocate(&self->in_buffer);
   buffer_deallocate(&self->out_buffer);
