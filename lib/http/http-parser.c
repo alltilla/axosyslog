@@ -175,6 +175,12 @@ http_parser_is_message_complete(const HTTPParser *self)
   return self->message_complete;
 }
 
+gboolean
+http_parser_should_keep_alive(const HTTPParser *self)
+{
+  return llhttp_should_keep_alive(&self->parser);
+}
+
 HTTPMessage *
 http_parser_steal_message(HTTPParser *self)
 {

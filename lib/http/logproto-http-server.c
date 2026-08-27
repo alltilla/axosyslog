@@ -56,6 +56,7 @@ struct _LogProtoHTTPServer
   LogProtoServer super;
 
   State state;
+  gboolean keep_alive;
   Buffer in_buffer;
   Buffer out_buffer;
   HTTPParser *http_parser;
@@ -222,6 +223,7 @@ log_proto_http_server_parse_request(LogProtoHTTPServer *self, LogProtoStatus sta
 
   if (http_parser_is_message_complete(self->http_parser))
     {
+      self->keep_alive = http_parser_should_keep_alive(self->http_parser);
       buffer_split(&self->in_buffer);
 
       msg_debug("Incoming HTTP request");
@@ -311,6 +313,9 @@ log_proto_http_server_send_response(LogProtoHTTPServer *self)
   if (self->state == STATE_HTTP_ERROR)
     return LPS_ERROR;
 
+  if (!self->keep_alive)
+    return LPS_EOF;
+
   self->state = STATE_RECEIVE_HTTP_REQUEST;
   return status;
 }
@@ -354,6 +359,9 @@ log_proto_http_server_create_response(LogProtoHTTPServer *self, HTTPRequest *htt
     }
 
   http_response_add_mandatory_headers(http_response);
+
+  if (!self->keep_alive && !http_message_normalized_header_exists(&http_response->super, "connection"))
+    http_message_add_header(&http_response->super, "connection", "close");
 
   GByteArray *raw_http_response = http_response_generate_raw_response(http_response);
   buffer_assign(&self->out_buffer, raw_http_response->data, raw_http_response->len);

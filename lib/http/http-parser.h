@@ -42,6 +42,7 @@ gboolean http_parser_signal_end_of_stream(HTTPParser *self);
 
 void http_parser_skip_message(HTTPParser *self);
 gboolean http_parser_is_message_complete(const HTTPParser *self);
+gboolean http_parser_should_keep_alive(const HTTPParser *self);
 HTTPMessage *http_parser_steal_message(HTTPParser *self);
 
 GError *http_parser_get_last_error(const HTTPParser *self);
