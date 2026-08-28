@@ -3,6 +3,11 @@ if ENABLE_HTTP
 noinst_LTLIBRARIES += modules/http/source/libehttp-source.la
 
 modules_http_source_libehttp_source_la_SOURCES = \
+  modules/http/source/elasticsearch-bulk-grammar.y \
+  modules/http/source/elasticsearch-bulk-parser.c \
+  modules/http/source/elasticsearch-bulk-parser.h \
+  modules/http/source/elasticsearch-bulk-source.c \
+  modules/http/source/elasticsearch-bulk-source.h \
   modules/http/source/http-decompression.c \
   modules/http/source/http-decompression.h \
   modules/http/source/http-source-grammar.y \
@@ -27,8 +32,12 @@ endif
 BUILT_SOURCES += \
   modules/http/source/http-source-grammar.y \
   modules/http/source/http-source-grammar.c \
-  modules/http/source/http-source-grammar.h
+  modules/http/source/http-source-grammar.h \
+  modules/http/source/elasticsearch-bulk-grammar.y \
+  modules/http/source/elasticsearch-bulk-grammar.c \
+  modules/http/source/elasticsearch-bulk-grammar.h
 
 EXTRA_DIST += \
   modules/http/source/http-source-grammar.ym \
+  modules/http/source/elasticsearch-bulk-grammar.ym \
   modules/http/source/CMakeLists.txt
