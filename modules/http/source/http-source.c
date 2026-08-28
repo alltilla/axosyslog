@@ -237,8 +237,14 @@ static GQueue *
 _extract_log_messages(HTTPRequest *http_request, HTTPSourceConnection *connection)
 {
   EHTTPSourceDriver *self = (EHTTPSourceDriver *) connection->owner;
+  EHTTPSourceConnection *ehttp_connection = (EHTTPSourceConnection *) connection;
 
   if (!_authenticate(self, http_request))
+    return NULL;
+
+  gsize max_body_size = self->super.super.reader_options.proto_options.super.init_buffer_size;
+  ehttp_connection->decompress_result = http_message_decode_content_encoding(&http_request->super, max_body_size);
+  if (ehttp_connection->decompress_result != HTTP_DECOMPRESS_OK)
     return NULL;
 
   GQueue *messages = ehttp_extract_modes[self->mode](http_request, connection);
@@ -250,16 +256,39 @@ _extract_log_messages(HTTPRequest *http_request, HTTPSourceConnection *connectio
   return messages;
 }
 
+static HTTPStatusCode
+_decompress_result_to_status_code(HTTPDecompressResult result)
+{
+  switch (result)
+    {
+    case HTTP_DECOMPRESS_UNSUPPORTED:
+      return HTTP_UNSUPPORTED_MEDIA_TYPE;
+    case HTTP_DECOMPRESS_TOO_LARGE:
+      return HTTP_PAYLOAD_TOO_LARGE;
+    default:
+      return HTTP_BAD_REQUEST;
+    }
+}
+
 HTTPResponse *
 _create_response(HTTPRequest *http_request, HTTPSourceConnection *connection)
 {
   EHTTPSourceDriver *self = (EHTTPSourceDriver *) connection->owner;
+  EHTTPSourceConnection *ehttp_connection = (EHTTPSourceConnection *) connection;
 
   if (!_authenticate(self, http_request))
     {
       HTTPResponse *response = http_response_new_empty();
       http_message_set_http_version(&response->super, 1, 1);
       http_response_set_status_code(response, HTTP_FORBIDDEN);
+      return response;
+    }
+
+  if (ehttp_connection->decompress_result != HTTP_DECOMPRESS_OK)
+    {
+      HTTPResponse *response = http_response_new_empty();
+      http_message_set_http_version(&response->super, 1, 1);
+      http_response_set_status_code(response, _decompress_result_to_status_code(ehttp_connection->decompress_result));
       return response;
     }
 
@@ -271,8 +300,6 @@ _create_response(HTTPRequest *http_request, HTTPSourceConnection *connection)
 
   if (self->response_body)
     {
-      EHTTPSourceConnection *ehttp_connection = (EHTTPSourceConnection *) connection;
-
       GString *formatted = g_string_sized_new(64);
       LogMessage *msg = ehttp_connection->first_message ? ehttp_connection->first_message : log_msg_new_empty();
       ehttp_connection->first_message = NULL;
