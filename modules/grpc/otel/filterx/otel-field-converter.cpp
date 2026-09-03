@@ -43,6 +43,8 @@
 #include "compat/cpp-end.h"
 
 #include "opentelemetry/proto/logs/v1/logs.pb.h"
+#include "opentelemetry/proto/metrics/v1/metrics.pb.h"
+#include "opentelemetry/proto/trace/v1/trace.pb.h"
 
 #include <string.h>
 
@@ -50,6 +52,8 @@ using namespace syslogng::grpc;
 using namespace syslogng::grpc::otel;
 using namespace google::protobuf;
 using namespace opentelemetry::proto::logs::v1;
+using namespace opentelemetry::proto::metrics::v1;
+using namespace opentelemetry::proto::trace::v1;
 
 gpointer
 grpc_otel_filterx_enum_construct(Plugin *self)
@@ -80,6 +84,20 @@ grpc_otel_filterx_enum_construct(Plugin *self)
     { "SEVERITY_NUMBER_FATAL2", SeverityNumber::SEVERITY_NUMBER_FATAL2 },
     { "SEVERITY_NUMBER_FATAL3", SeverityNumber::SEVERITY_NUMBER_FATAL3 },
     { "SEVERITY_NUMBER_FATAL4", SeverityNumber::SEVERITY_NUMBER_FATAL4 },
+    { "LOG_RECORD_FLAGS_TRACE_FLAGS_MASK", LogRecordFlags::LOG_RECORD_FLAGS_TRACE_FLAGS_MASK },
+    { "SPAN_KIND_UNSPECIFIED", Span::SPAN_KIND_UNSPECIFIED },
+    { "SPAN_KIND_INTERNAL", Span::SPAN_KIND_INTERNAL },
+    { "SPAN_KIND_SERVER", Span::SPAN_KIND_SERVER },
+    { "SPAN_KIND_CLIENT", Span::SPAN_KIND_CLIENT },
+    { "SPAN_KIND_PRODUCER", Span::SPAN_KIND_PRODUCER },
+    { "SPAN_KIND_CONSUMER", Span::SPAN_KIND_CONSUMER },
+    { "STATUS_CODE_UNSET", Status::STATUS_CODE_UNSET },
+    { "STATUS_CODE_OK", Status::STATUS_CODE_OK },
+    { "STATUS_CODE_ERROR", Status::STATUS_CODE_ERROR },
+    { "AGGREGATION_TEMPORALITY_UNSPECIFIED", AggregationTemporality::AGGREGATION_TEMPORALITY_UNSPECIFIED },
+    { "AGGREGATION_TEMPORALITY_DELTA", AggregationTemporality::AGGREGATION_TEMPORALITY_DELTA },
+    { "AGGREGATION_TEMPORALITY_CUMULATIVE", AggregationTemporality::AGGREGATION_TEMPORALITY_CUMULATIVE },
+    { "DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK", DataPointFlags::DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK },
     { NULL },
   };
 
