@@ -451,6 +451,56 @@ Test(otel_dict_converter, parse_otel_function_rejects_bad_arguments)
   cr_assert_not(_call(SIMPLE_FN(parse_otel_span), filterx_bytes_new("\xff\xff\xff", 3)));
 }
 
+Test(otel_dict_converter, format_otel_function)
+{
+  FilterXObject *dict = filterx_object_from_json("{\"name\": \"GET /\", \"kind\": 2, \"attributes\": {\"a\": 1}}", -1,
+                                                 NULL);
+  FilterXObject *result = _call(SIMPLE_FN(format_otel_span), dict);
+  cr_assert(result);
+  cr_assert(filterx_object_is_type(result, &FILTERX_TYPE_NAME(protobuf)));
+
+  gsize len;
+  const gchar *data = filterx_protobuf_get_value_ref(result, &len);
+  Span span;
+  cr_assert(span.ParseFromArray(data, len));
+  cr_assert_eq(span.name().compare("GET /"), 0);
+  cr_assert_eq(span.kind(), Span::SPAN_KIND_SERVER);
+  cr_assert_eq(span.attributes(0).value().int_value(), 1);
+
+  filterx_object_unref(result);
+}
+
+Test(otel_dict_converter, format_otel_function_rejects_bad_arguments)
+{
+  cr_assert_not(_call(SIMPLE_FN(format_otel_metric), NULL));
+  cr_assert_not(_call(SIMPLE_FN(format_otel_metric), filterx_string_new("not a dict", -1)));
+  cr_assert_not(_call(SIMPLE_FN(format_otel_metric), filterx_object_from_json("{\"nmae\": \"typo\"}", -1, NULL)));
+}
+
+Test(otel_dict_converter, parse_and_format_functions_round_trip)
+{
+  Metric metric;
+  metric.set_name("h");
+  HistogramDataPoint *data_point = metric.mutable_histogram()->add_data_points();
+  data_point->set_time_unix_nano(T2);
+  data_point->set_count(3);
+  data_point->add_bucket_counts(1);
+  data_point->add_bucket_counts(2);
+  data_point->add_explicit_bounds(0.5);
+  std::string serialized = metric.SerializeAsString();
+
+  FilterXObject *dict = _call(SIMPLE_FN(parse_otel_metric), filterx_protobuf_new(serialized.data(), serialized.size()));
+  cr_assert(dict);
+  FilterXObject *result = _call(SIMPLE_FN(format_otel_metric), dict);
+  cr_assert(result);
+
+  gsize len;
+  const gchar *data = filterx_protobuf_get_value_ref(result, &len);
+  cr_assert_eq(serialized.compare(std::string(data, len)), 0);
+
+  filterx_object_unref(result);
+}
+
 static void
 setup(void)
 {

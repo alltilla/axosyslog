@@ -82,3 +82,28 @@ FILTERX_SIMPLE_FUNCTION(parse_otel_scope, _parse<InstrumentationScope>);
 FILTERX_SIMPLE_FUNCTION(parse_otel_logrecord, _parse<LogRecord>);
 FILTERX_SIMPLE_FUNCTION(parse_otel_span, _parse<Span>);
 FILTERX_SIMPLE_FUNCTION(parse_otel_metric, _parse<Metric>);
+
+template <typename M>
+static FilterXObject *
+_format(FilterXExpr *s, FilterXObject *args[], gsize args_len)
+{
+  if (!args || args_len != 1)
+    {
+      filterx_eval_push_error_info_printf("Failed to format OTel message", "%s: requires exactly one argument",
+                                          std::string(M::descriptor()->name()).c_str());
+      return NULL;
+    }
+
+  M message;
+  if (!otel_filterx_dict_to_protobuf_message(args[0], message))
+    return NULL;
+
+  std::string serialized = message.SerializeAsString();
+  return filterx_protobuf_new(serialized.data(), serialized.size());
+}
+
+FILTERX_SIMPLE_FUNCTION(format_otel_resource, _format<Resource>);
+FILTERX_SIMPLE_FUNCTION(format_otel_scope, _format<InstrumentationScope>);
+FILTERX_SIMPLE_FUNCTION(format_otel_logrecord, _format<LogRecord>);
+FILTERX_SIMPLE_FUNCTION(format_otel_span, _format<Span>);
+FILTERX_SIMPLE_FUNCTION(format_otel_metric, _format<Metric>);

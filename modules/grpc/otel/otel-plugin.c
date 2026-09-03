@@ -84,6 +84,11 @@ static Plugin otel_plugins[] =
   FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_logrecord),
   FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_span),
   FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_metric),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(format_otel_resource),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(format_otel_scope),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(format_otel_logrecord),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(format_otel_span),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(format_otel_metric),
 };
 
 gboolean

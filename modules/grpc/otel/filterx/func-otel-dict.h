@@ -35,6 +35,12 @@ FILTERX_SIMPLE_FUNCTION_DECLARE(parse_otel_logrecord);
 FILTERX_SIMPLE_FUNCTION_DECLARE(parse_otel_span);
 FILTERX_SIMPLE_FUNCTION_DECLARE(parse_otel_metric);
 
+FILTERX_SIMPLE_FUNCTION_DECLARE(format_otel_resource);
+FILTERX_SIMPLE_FUNCTION_DECLARE(format_otel_scope);
+FILTERX_SIMPLE_FUNCTION_DECLARE(format_otel_logrecord);
+FILTERX_SIMPLE_FUNCTION_DECLARE(format_otel_span);
+FILTERX_SIMPLE_FUNCTION_DECLARE(format_otel_metric);
+
 #include "compat/cpp-end.h"
 
 #endif
