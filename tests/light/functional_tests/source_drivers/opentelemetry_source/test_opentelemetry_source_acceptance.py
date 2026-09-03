@@ -488,6 +488,15 @@ def _metric_summary() -> Metric:
     return metric
 
 
+METRIC_SUM_OUTPUT = {
+    "name": "sum",
+    "sum": {
+        "data_points": [{"start_time_unix_nano": "1111111111.000000", "time_unix_nano": "2222222222.000000", "as_int": 5}],
+        "aggregation_temporality": 2, "is_monotonic": True,
+    },
+}
+
+
 @pytest.mark.parametrize(
     "metric, metric_output",
     [
@@ -498,16 +507,7 @@ def _metric_summary() -> Metric:
                 "gauge": {"data_points": [{"time_unix_nano": "1111111111.000000", "as_double": 1.5, "attributes": {"a": "b"}}]},
             },
         ),
-        (
-            _metric_sum(),
-            {
-                "name": "sum",
-                "sum": {
-                    "data_points": [{"start_time_unix_nano": "1111111111.000000", "time_unix_nano": "2222222222.000000", "as_int": 5}],
-                    "aggregation_temporality": 2, "is_monotonic": True,
-                },
-            },
-        ),
+        (_metric_sum(), METRIC_SUM_OUTPUT),
         (
             _metric_histogram(),
             {
@@ -648,6 +648,67 @@ def test_opentelemetry_source_filterx_dict_mode_span(
         "resource": RESOURCE_1_OUTPUT,
         "scope": SCOPE_1_OUTPUT,
         "span": SPAN_OUTPUT,
+    }
+
+
+@pytest.mark.parametrize(
+    "signal, write, signal_output",
+    [
+        ("log", lambda source, resource, scope: source.write_log(resource=resource, scope=scope, log=LOG_1), LOG_1_OUTPUT),
+        ("metric", lambda source, resource, scope: source.write_metric(resource=resource, scope=scope, metric=_metric_sum()), METRIC_SUM_OUTPUT),
+        ("span", lambda source, resource, scope: source.write_span(resource=resource, scope=scope, span=_span()), SPAN_OUTPUT),
+    ],
+    ids=["log", "metric", "span"],
+)
+def test_opentelemetry_filterx_dict_round_trip_through_destination(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+    signal: str,
+    write: typing.Callable[[typing.Any, OTelResource, OTelScope], None],
+    signal_output: typing.Dict[str, typing.Any],
+) -> None:
+    receiver_port = port_allocator()
+
+    sender_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    format_filterx = config.create_filterx(r"""
+        ${.otel_raw.resource} = format_otel_resource(resource);
+        ${.otel_raw.scope} = format_otel_scope(scope);
+        if (isset(log)) {
+            ${.otel_raw.log} = format_otel_logrecord(log);
+        } elif (isset(metric)) {
+            ${.otel_raw.metric} = format_otel_metric(metric);
+        } else {
+            ${.otel_raw.span} = format_otel_span(span);
+        };""")
+    opentelemetry_destination = config.create_opentelemetry_destination(port=receiver_port)
+    config.create_logpath(statements=[sender_source, format_filterx, opentelemetry_destination])
+
+    receiver_source = config.create_opentelemetry_source(port=receiver_port, mode="filterx-dict")
+    dump_filterx = config.create_filterx(r"""
+        $MSG = {
+            "type": ${.otel_raw.type},
+            "resource_schema_url": ${.otel_raw.resource_schema_url},
+            "scope_schema_url": ${.otel_raw.scope_schema_url},
+            "resource": resource,
+            "scope": scope,
+            "signal": isset(log) ? log : (isset(metric) ? metric : span),
+        };""")
+    file_destination = config.create_file_destination(file_name="output.log", template=TEMPLATE)
+    config.create_logpath(statements=[receiver_source, dump_filterx, file_destination])
+
+    syslog_ng.start(config)
+    resource = OTelResource(attributes={"r": "1"}, schema_url="https://example.com/resource")
+    scope = OTelScope(name="s", schema_url="https://example.com/scope")
+    write(sender_source, resource, scope)
+
+    assert json.loads(file_destination.read_log()) == {
+        "type": signal,
+        "resource_schema_url": "https://example.com/resource",
+        "scope_schema_url": "https://example.com/scope",
+        "resource": {"attributes": {"r": "1"}},
+        "scope": {"name": "s"},
+        "signal": signal_output,
     }
 
 
