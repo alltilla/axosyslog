@@ -32,7 +32,7 @@
 #include "otel-source.hpp"
 #include "otel-protobuf-parser.hpp"
 #include "otel-logmsg-handles.hpp"
-#include "filterx/otel-field-converter.hpp"
+#include "filterx/otel-dict-converter.hpp"
 
 #include "compat/cpp-start.h"
 #include "transport/tls-session.h"

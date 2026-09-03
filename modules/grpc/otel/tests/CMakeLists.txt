@@ -25,3 +25,10 @@ add_unit_test(
   SOURCES test-otel-filterx.cpp
   INCLUDES ${OTEL_PROTO_BUILDDIR} ${PROJECT_SOURCE_DIR}/modules/grpc/common
   DEPENDS otel-cpp otel_filterx_logrecord_cpp)
+
+add_unit_test(
+  CRITERION LIBTEST
+  TARGET test_otel_dict_converter
+  SOURCES test-otel-dict-converter.cpp
+  INCLUDES ${OTEL_PROTO_BUILDDIR} ${PROJECT_SOURCE_DIR}/modules/grpc/common
+  DEPENDS otel-cpp otel_filterx_logrecord_cpp)
