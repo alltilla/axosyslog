@@ -30,6 +30,8 @@
 #include "filterx/object-primitive.h"
 #include "filterx/object-datetime.h"
 #include "filterx/object-null.h"
+#include "filterx/object-extractor.h"
+#include "filterx/filterx-mapping.h"
 #include "filterx/filterx-sequence.h"
 #include "filterx/filterx-eval.h"
 #include "timeutils/unixtime.h"
@@ -43,6 +45,8 @@
 using namespace google::protobuf;
 using opentelemetry::proto::common::v1::AnyValue;
 using opentelemetry::proto::common::v1::KeyValue;
+using opentelemetry::proto::common::v1::KeyValueList;
+using opentelemetry::proto::common::v1::ArrayValue;
 
 static FilterXObject *_message_to_dict(const Message &message);
 
@@ -276,4 +280,399 @@ FilterXObject *
 syslogng::grpc::otel::otel_protobuf_message_to_filterx_dict(const Message &message)
 {
   return _message_to_dict(message);
+}
+
+/* dict -> message */
+
+static bool _dict_to_message(FilterXObject *dict, Message *message);
+static bool _any_value_from_object(AnyValue *any_value, FilterXObject *value);
+
+static bool
+_push_type_error(const FieldDescriptor *fd, FilterXObject *value, const char *expected)
+{
+  filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                      "Field %s expects %s, got %s",
+                                      std::string(fd->full_name()).c_str(), expected,
+                                      filterx_object_get_type_name(value));
+  return false;
+}
+
+static bool
+_extract_integer_in_range(const FieldDescriptor *fd, FilterXObject *value, gint64 min, gint64 max, gint64 *result)
+{
+  if (!filterx_object_extract_integer(value, result))
+    return _push_type_error(fd, value, "an integer");
+
+  if (*result < min || *result > max)
+    {
+      filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                          "Field %s expects an integer between %" G_GINT64_FORMAT
+                                          " and %" G_GINT64_FORMAT ", got %" G_GINT64_FORMAT,
+                                          std::string(fd->full_name()).c_str(), min, max, *result);
+      return false;
+    }
+  return true;
+}
+
+static bool
+_extract_timestamp(const FieldDescriptor *fd, FilterXObject *value, uint64_t *result)
+{
+  UnixTime utime;
+  if (filterx_object_extract_datetime(value, &utime))
+    {
+      *result = unix_time_to_unix_epoch_nsec(utime);
+      return true;
+    }
+
+  gint64 nsec;
+  if (filterx_object_extract_integer(value, &nsec))
+    {
+      if (nsec < 0)
+        return _push_type_error(fd, value, "a non-negative integer of nanoseconds");
+      *result = nsec;
+      return true;
+    }
+
+  return _push_type_error(fd, value, "a datetime or an integer of nanoseconds");
+}
+
+static bool
+_extract_double(const FieldDescriptor *fd, FilterXObject *value, gdouble *result)
+{
+  if (filterx_object_extract_double(value, result))
+    return true;
+
+  gint64 i;
+  if (filterx_object_extract_integer(value, &i))
+    {
+      *result = (gdouble) i;
+      return true;
+    }
+
+  return _push_type_error(fd, value, "a number");
+}
+
+static bool
+_set_key_value(KeyValue *key_value, FilterXObject *key, FilterXObject *value)
+{
+  const gchar *key_str;
+  gsize key_len;
+  if (!filterx_object_extract_string_ref(key, &key_str, &key_len))
+    {
+      filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                          "Attribute keys must be strings, got %s",
+                                          filterx_object_get_type_name(key));
+      return false;
+    }
+
+  key_value->set_key(key_str, key_len);
+  return _any_value_from_object(key_value->mutable_value(), value);
+}
+
+static gboolean
+_add_kvlist_entry(FilterXObject *key, FilterXObject *value, gpointer user_data)
+{
+  KeyValueList *kvlist = (KeyValueList *) user_data;
+  return _set_key_value(kvlist->add_values(), key, value);
+}
+
+static bool
+_any_value_from_object(AnyValue *any_value, FilterXObject *value)
+{
+  gboolean b;
+  gint64 i;
+  gdouble d;
+  const gchar *str;
+  gsize len;
+  UnixTime utime;
+
+  if (filterx_object_extract_null(value))
+    {
+      any_value->clear_value();
+      return true;
+    }
+  if (filterx_object_extract_boolean(value, &b))
+    {
+      any_value->set_bool_value(b);
+      return true;
+    }
+  if (filterx_object_extract_integer(value, &i))
+    {
+      any_value->set_int_value(i);
+      return true;
+    }
+  if (filterx_object_extract_double(value, &d))
+    {
+      any_value->set_double_value(d);
+      return true;
+    }
+  if (filterx_object_extract_string_ref(value, &str, &len))
+    {
+      any_value->set_string_value(str, len);
+      return true;
+    }
+  if (filterx_object_extract_bytes_ref(value, &str, &len) || filterx_object_extract_protobuf_ref(value, &str, &len))
+    {
+      any_value->set_bytes_value(str, len);
+      return true;
+    }
+  if (filterx_object_extract_datetime(value, &utime))
+    {
+      /* the same unit the otel_logrecord() object family stores a datetime attribute in */
+      any_value->set_int_value(unix_time_to_unix_epoch_usec(utime));
+      return true;
+    }
+
+  FilterXObject *unwrapped = filterx_ref_unwrap_ro(value);
+  if (filterx_object_is_type(unwrapped, &FILTERX_TYPE_NAME(mapping)))
+    return filterx_object_iter(unwrapped, _add_kvlist_entry, any_value->mutable_kvlist_value());
+
+  if (filterx_object_is_type(unwrapped, &FILTERX_TYPE_NAME(sequence)))
+    {
+      ArrayValue *array = any_value->mutable_array_value();
+      guint64 array_len;
+      g_assert(filterx_object_len(unwrapped, &array_len));
+      for (guint64 idx = 0; idx < array_len; idx++)
+        {
+          FilterXObject *element = filterx_sequence_get_subscript(unwrapped, idx);
+          bool success = _any_value_from_object(array->add_values(), element);
+          filterx_object_unref(element);
+          if (!success)
+            return false;
+        }
+      return true;
+    }
+
+  filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                      "Cannot convert %s to an AnyValue",
+                                      filterx_object_get_type_name(value));
+  return false;
+}
+
+/* add == true appends to a repeated field, otherwise sets a singular one */
+static bool
+_set_field_value(Message *message, const Reflection *reflection, const FieldDescriptor *fd, FilterXObject *value,
+                 bool add)
+{
+  switch (fd->cpp_type())
+    {
+    case FieldDescriptor::CPPTYPE_INT32:
+    {
+      gint64 i;
+      if (!_extract_integer_in_range(fd, value, G_MININT32, G_MAXINT32, &i))
+        return false;
+      add ? reflection->AddInt32(message, fd, i) : reflection->SetInt32(message, fd, i);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_INT64:
+    {
+      gint64 i;
+      if (!_extract_integer_in_range(fd, value, G_MININT64, G_MAXINT64, &i))
+        return false;
+      add ? reflection->AddInt64(message, fd, i) : reflection->SetInt64(message, fd, i);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_UINT32:
+    {
+      gint64 i;
+      if (!_extract_integer_in_range(fd, value, 0, G_MAXUINT32, &i))
+        return false;
+      add ? reflection->AddUInt32(message, fd, i) : reflection->SetUInt32(message, fd, i);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_UINT64:
+    {
+      uint64_t u;
+      if (_is_timestamp_field(fd))
+        {
+          if (!_extract_timestamp(fd, value, &u))
+            return false;
+        }
+      else
+        {
+          gint64 i;
+          if (!_extract_integer_in_range(fd, value, 0, G_MAXINT64, &i))
+            return false;
+          u = i;
+        }
+      add ? reflection->AddUInt64(message, fd, u) : reflection->SetUInt64(message, fd, u);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_DOUBLE:
+    {
+      gdouble d;
+      if (!_extract_double(fd, value, &d))
+        return false;
+      add ? reflection->AddDouble(message, fd, d) : reflection->SetDouble(message, fd, d);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_FLOAT:
+    {
+      gdouble d;
+      if (!_extract_double(fd, value, &d))
+        return false;
+      add ? reflection->AddFloat(message, fd, (float) d) : reflection->SetFloat(message, fd, (float) d);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_BOOL:
+    {
+      gboolean b;
+      if (!filterx_object_extract_boolean(value, &b))
+        return _push_type_error(fd, value, "a boolean");
+      add ? reflection->AddBool(message, fd, b) : reflection->SetBool(message, fd, b);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_ENUM:
+    {
+      /* proto3 enums are open, any int32 is valid on the wire */
+      gint64 i;
+      if (!_extract_integer_in_range(fd, value, G_MININT32, G_MAXINT32, &i))
+        return false;
+      add ? reflection->AddEnumValue(message, fd, i) : reflection->SetEnumValue(message, fd, i);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_STRING:
+    {
+      const gchar *str;
+      gsize len;
+      if (fd->type() == FieldDescriptor::TYPE_BYTES)
+        {
+          if (!filterx_object_extract_bytes_ref(value, &str, &len) && !filterx_object_extract_protobuf_ref(value, &str, &len))
+            return _push_type_error(fd, value, "bytes");
+        }
+      else if (!filterx_object_extract_string_ref(value, &str, &len))
+        return _push_type_error(fd, value, "a string");
+      std::string string_value(str, len);
+      add ? reflection->AddString(message, fd, string_value) : reflection->SetString(message, fd, string_value);
+      return true;
+    }
+    case FieldDescriptor::CPPTYPE_MESSAGE:
+    {
+      Message *sub_message = add ? reflection->AddMessage(message, fd) : reflection->MutableMessage(message, fd);
+      if (fd->message_type() == AnyValue::descriptor())
+        return _any_value_from_object(static_cast<AnyValue *>(sub_message), value);
+      return _dict_to_message(value, sub_message);
+    }
+    default:
+      g_assert_not_reached();
+    }
+}
+
+struct RepeatedKeyValueField
+{
+  Message *message;
+  const Reflection *reflection;
+  const FieldDescriptor *fd;
+};
+
+static gboolean
+_add_attribute_entry(FilterXObject *key, FilterXObject *value, gpointer user_data)
+{
+  RepeatedKeyValueField *field = (RepeatedKeyValueField *) user_data;
+  KeyValue *key_value = static_cast<KeyValue *>(field->reflection->AddMessage(field->message, field->fd));
+  return _set_key_value(key_value, key, value);
+}
+
+static bool
+_set_field(Message *message, const FieldDescriptor *fd, FilterXObject *value)
+{
+  const Reflection *reflection = message->GetReflection();
+
+  if (filterx_object_extract_null(value))
+    {
+      /* null is how the dict reports an AnyValue without a value, keep that on the way back */
+      if (!fd->is_repeated() && fd->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE
+          && fd->message_type() == AnyValue::descriptor())
+        reflection->MutableMessage(message, fd);
+      return true;
+    }
+
+  const OneofDescriptor *oneof = fd->real_containing_oneof();
+  if (oneof && reflection->HasOneof(*message, oneof))
+    {
+      filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                          "Field %s cannot be set together with %s, only one of the %s fields is allowed",
+                                          std::string(fd->full_name()).c_str(),
+                                          std::string(reflection->GetOneofFieldDescriptor(*message, oneof)->name()).c_str(),
+                                          std::string(oneof->name()).c_str());
+      return false;
+    }
+
+  if (!fd->is_repeated())
+    return _set_field_value(message, reflection, fd, value, false);
+
+  FilterXObject *unwrapped = filterx_ref_unwrap_ro(value);
+
+  if (fd->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE && fd->message_type() == KeyValue::descriptor())
+    {
+      if (!filterx_object_is_type(unwrapped, &FILTERX_TYPE_NAME(mapping)))
+        return _push_type_error(fd, value, "a dict");
+      RepeatedKeyValueField field = { message, reflection, fd };
+      return filterx_object_iter(unwrapped, _add_attribute_entry, &field);
+    }
+
+  if (!filterx_object_is_type(unwrapped, &FILTERX_TYPE_NAME(sequence)))
+    return _push_type_error(fd, value, "a list");
+
+  guint64 len;
+  g_assert(filterx_object_len(unwrapped, &len));
+  for (guint64 i = 0; i < len; i++)
+    {
+      FilterXObject *element = filterx_sequence_get_subscript(unwrapped, i);
+      bool success = _set_field_value(message, reflection, fd, element, true);
+      filterx_object_unref(element);
+      if (!success)
+        return false;
+    }
+  return true;
+}
+
+static gboolean
+_set_field_from_dict_entry(FilterXObject *key, FilterXObject *value, gpointer user_data)
+{
+  Message *message = (Message *) user_data;
+
+  const gchar *key_str;
+  gsize key_len;
+  if (!filterx_object_extract_string_ref(key, &key_str, &key_len))
+    {
+      filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                          "Field names must be strings, got %s",
+                                          filterx_object_get_type_name(key));
+      return FALSE;
+    }
+
+  const FieldDescriptor *fd = message->GetDescriptor()->FindFieldByName(std::string(key_str, key_len));
+  if (!fd)
+    {
+      filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                          "Unknown field %.*s in %s",
+                                          (int) key_len, key_str,
+                                          std::string(message->GetDescriptor()->full_name()).c_str());
+      return FALSE;
+    }
+
+  return _set_field(message, fd, value);
+}
+
+static bool
+_dict_to_message(FilterXObject *dict, Message *message)
+{
+  FilterXObject *unwrapped = filterx_ref_unwrap_ro(dict);
+  if (!filterx_object_is_type(unwrapped, &FILTERX_TYPE_NAME(mapping)))
+    {
+      filterx_eval_push_error_info_printf("Failed to convert dict to OTel message",
+                                          "%s expects a dict, got %s",
+                                          std::string(message->GetDescriptor()->full_name()).c_str(),
+                                          filterx_object_get_type_name(dict));
+      return false;
+    }
+
+  return filterx_object_iter(unwrapped, _set_field_from_dict_entry, message);
+}
+
+bool
+syslogng::grpc::otel::otel_filterx_dict_to_protobuf_message(FilterXObject *dict, Message &message)
+{
+  return _dict_to_message(dict, &message);
 }

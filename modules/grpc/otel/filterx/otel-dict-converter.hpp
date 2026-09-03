@@ -41,6 +41,10 @@ namespace otel {
  * KeyValue is a dict, *_unix_nano is a datetime, enums are integers. */
 FilterXObject *otel_protobuf_message_to_filterx_dict(const google::protobuf::Message &message);
 
+/* The inverse. Every key must be a field of the message, null leaves the
+ * field unset and naming two members of one oneof is an error. */
+bool otel_filterx_dict_to_protobuf_message(FilterXObject *dict, google::protobuf::Message &message);
+
 }
 }
 }

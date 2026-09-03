@@ -26,6 +26,10 @@
 #include "compat/cpp-start.h"
 #include "apphook.h"
 #include "libtest/filterx-lib.h"
+#include "filterx/json-repr.h"
+#include "filterx/object-dict.h"
+#include "filterx/object-string.h"
+#include "filterx/object-datetime.h"
 #include "compat/cpp-end.h"
 
 #include "opentelemetry/proto/common/v1/common.pb.h"
@@ -52,7 +56,32 @@ _assert_dict(const google::protobuf::Message &message, const gchar *expected_jso
   FilterXObject *dict = otel_protobuf_message_to_filterx_dict(message);
   cr_assert(dict);
   assert_object_json_equals(dict, expected_json);
+
+  google::protobuf::Message *round_tripped = message.New();
+  cr_assert(otel_filterx_dict_to_protobuf_message(dict, *round_tripped));
+  cr_assert_eq(round_tripped->SerializeAsString().compare(message.SerializeAsString()), 0);
+
+  delete round_tripped;
   filterx_object_unref(dict);
+}
+
+static bool
+_format_json(const gchar *json, google::protobuf::Message &message)
+{
+  FilterXObject *dict = filterx_object_from_json(json, -1, NULL);
+  cr_assert(dict);
+  bool success = otel_filterx_dict_to_protobuf_message(dict, message);
+  filterx_object_unref(dict);
+  return success;
+}
+
+static void
+_set_dict_entry(FilterXObject *dict, const gchar *key, FilterXObject *value)
+{
+  FilterXObject *key_object = filterx_string_new(key, -1);
+  cr_assert(filterx_object_set_subscript(dict, key_object, &value));
+  filterx_object_unref(key_object);
+  filterx_object_unref(value);
 }
 
 static KeyValue *
@@ -299,6 +328,81 @@ Test(otel_dict_converter, uint64_above_int64_max_fails)
   metric.mutable_histogram()->add_data_points()->set_count(UINT64_MAX);
 
   cr_assert_not(otel_protobuf_message_to_filterx_dict(metric));
+}
+
+Test(otel_dict_converter, format_unknown_key_fails)
+{
+  LogRecord log_record;
+  cr_assert_not(_format_json("{\"severity_numbre\": 9}", log_record));
+}
+
+Test(otel_dict_converter, format_two_members_of_a_oneof_fails)
+{
+  Metric metric;
+  cr_assert_not(_format_json("{\"gauge\": {}, \"sum\": {}}", metric));
+
+  NumberDataPoint data_point;
+  cr_assert_not(_format_json("{\"as_int\": 1, \"as_double\": 1.5}", data_point));
+}
+
+Test(otel_dict_converter, format_type_mismatch_fails)
+{
+  Resource resource;
+  cr_assert_not(_format_json("{\"dropped_attributes_count\": \"one\"}", resource));
+  cr_assert_not(_format_json("{\"dropped_attributes_count\": -1}", resource));
+  cr_assert_not(_format_json("{\"attributes\": [1]}", resource));
+
+  Span span;
+  cr_assert_not(_format_json("{\"name\": 1}", span));
+  cr_assert_not(_format_json("{\"trace_id\": \"not bytes\"}", span));
+  cr_assert_not(_format_json("{\"events\": {}}", span));
+  cr_assert_not(_format_json("{\"status\": []}", span));
+  cr_assert_not(_format_json("{\"start_time_unix_nano\": \"now\"}", span));
+}
+
+Test(otel_dict_converter, format_null_leaves_the_field_unset)
+{
+  LogRecord log_record;
+  cr_assert(_format_json("{\"body\": null, \"severity_text\": null, \"attributes\": {\"a\": null}}", log_record));
+
+  cr_assert(log_record.has_body());
+  cr_assert_eq(log_record.body().value_case(), AnyValue::VALUE_NOT_SET);
+  cr_assert(log_record.severity_text().empty());
+  cr_assert_eq(log_record.attributes_size(), 1);
+  cr_assert_eq(log_record.attributes(0).value().value_case(), AnyValue::VALUE_NOT_SET);
+
+  _assert_dict(log_record, "{\"body\":null,\"attributes\":{\"a\":null}}");
+}
+
+Test(otel_dict_converter, format_accepts_any_enum_value_and_integer_timestamps)
+{
+  Span span;
+  cr_assert(_format_json("{\"kind\": 99, \"start_time_unix_nano\": 5}", span));
+  cr_assert_eq((int) span.kind(), 99);
+  cr_assert_eq(span.start_time_unix_nano(), 5);
+}
+
+Test(otel_dict_converter, format_proto3_optional_field)
+{
+  HistogramDataPoint data_point;
+  cr_assert(_format_json("{\"sum\": 1.5, \"count\": 2}", data_point));
+  cr_assert(data_point.has_sum());
+  cr_assert_not(data_point.has_min());
+}
+
+Test(otel_dict_converter, format_datetime_attribute_as_microseconds)
+{
+  UnixTime utime = unix_time_from_unix_epoch_usec(1111111111000005);
+  FilterXObject *attributes = filterx_dict_new();
+  _set_dict_entry(attributes, "ts", filterx_datetime_new(&utime));
+  FilterXObject *dict = filterx_dict_new();
+  _set_dict_entry(dict, "attributes", attributes);
+
+  Resource resource;
+  cr_assert(otel_filterx_dict_to_protobuf_message(dict, resource));
+  cr_assert_eq(resource.attributes(0).value().int_value(), 1111111111000005);
+
+  filterx_object_unref(dict);
 }
 
 static void
