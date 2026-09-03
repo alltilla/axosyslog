@@ -333,12 +333,17 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
       return;
     }
 
+  SourceDriver &owner = static_cast<SourceDriver &>(worker.get_owner());
   ::grpc::Status response_status = ::grpc::Status::OK;
 
   TLSPeerInfo peer_info = { 0 };
   _extract_peer_info(ctx, &peer_info);
 
   int msgs_in_fetch_round = 0;
+
+  FilterXScopeVariableLayout *filterx_scope_var_layout = NULL;
+  if (owner.mode == OSM_FILTERX_DICT)
+    filterx_scope_var_layout = _filterx_dict_layout_new("metric");
 
   for (const ResourceMetrics &resource_metrics : request.resource_metrics())
     {
@@ -360,12 +365,27 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
 
               LogMessage *msg = log_msg_new_empty();
               log_msg_set_recvd_rawmsg_size(msg, metric.ByteSizeLong());
-
-              ProtobufParser::store_raw_metadata(msg, ctx.peer(), resource, resource_metrics_schema_url, scope,
-                                                 scope_metrics_schema_url);
-              ProtobufParser::store_raw(msg, metric);
               _store_peer_info(msg, peer_info);
-              worker.blocking_post(msg);
+
+              if (owner.mode == OSM_LOGMESSAGE)
+                {
+                  ProtobufParser::store_raw_metadata(msg, ctx.peer(), resource, resource_metrics_schema_url, scope,
+                                                     scope_metrics_schema_url);
+                  ProtobufParser::store_raw(msg, metric);
+                  worker.blocking_post(msg);
+                }
+              else
+                {
+                  ProtobufParser::store_metadata(msg, ctx.peer(), resource_metrics_schema_url, scope_metrics_schema_url);
+                  ProtobufParser::store_raw_type(msg, "metric");
+
+                  if (!_post_as_filterx_dicts(worker, filterx_scope_var_layout, msg, resource, scope, "metric", metric))
+                    {
+                      msg_error("opentelemetry: failed to convert metric to FilterX dicts, dropping message");
+                      log_msg_unref(msg);
+                      continue;
+                    }
+                }
 
               msgs_in_fetch_round++;
               if (msgs_in_fetch_round == worker.get_owner().get_fetch_limit())
@@ -379,6 +399,8 @@ syslogng::grpc::otel::MetricsServiceCall::Proceed(bool ok)
 
   if (msgs_in_fetch_round != 0)
     log_threaded_source_worker_close_batch(&worker.super->super);
+
+  filterx_scope_variable_layout_free(filterx_scope_var_layout);
 
   status = SEND_RESPONSE;
   responder.Finish(response, response_status, this);
