@@ -289,7 +289,8 @@ syslogng::grpc::otel::LogsServiceCall::Proceed(bool ok)
                 }
               else
                 {
-                  ProtobufParser::store_peer_address(msg, ctx.peer());
+                  ProtobufParser::store_metadata(msg, ctx.peer(), resource_logs_schema_url, scope_logs_schema_url);
+                  ProtobufParser::store_raw_type(msg, "log");
 
                   if (!_post_log_record_as_filterx_dicts(worker, filterx_scope_var_layout, msg,
                                                          resource, scope, log_record))

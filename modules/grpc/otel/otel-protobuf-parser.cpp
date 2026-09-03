@@ -1126,6 +1126,27 @@ syslogng::grpc::otel::ProtobufParser::store_peer_address(LogMessage *msg, const 
 }
 
 void
+syslogng::grpc::otel::ProtobufParser::store_metadata(LogMessage *msg, const ::grpc::string &peer,
+                                                     const std::string &resource_schema_url,
+                                                     const std::string &scope_schema_url)
+{
+  store_peer_address(msg, peer);
+
+  /* .otel_raw.resource_schema_url */
+  _set_value(msg, logmsg_handle::RAW_RESOURCE_SCHEMA_URL, resource_schema_url, LM_VT_STRING);
+
+  /* .otel_raw.scope_schema_url */
+  _set_value(msg, logmsg_handle::RAW_SCOPE_SCHEMA_URL, scope_schema_url, LM_VT_STRING);
+}
+
+void
+syslogng::grpc::otel::ProtobufParser::store_raw_type(LogMessage *msg, const gchar *type)
+{
+  /* .otel_raw.type */
+  _set_value(msg, logmsg_handle::RAW_TYPE, type, LM_VT_STRING);
+}
+
+void
 syslogng::grpc::otel::ProtobufParser::store_raw_metadata(LogMessage *msg, const ::grpc::string &peer,
                                                          const Resource &resource,
                                                          const std::string &resource_schema_url,
@@ -1134,28 +1155,21 @@ syslogng::grpc::otel::ProtobufParser::store_raw_metadata(LogMessage *msg, const 
 {
   std::string serialized;
 
-  store_peer_address(msg, peer);
+  store_metadata(msg, peer, resource_schema_url, scope_schema_url);
 
   /* .otel_raw.resource */
   resource.SerializePartialToString(&serialized);
   _set_value(msg, logmsg_handle::RAW_RESOURCE, serialized, LM_VT_PROTOBUF);
 
-  /* .otel_raw.resource_schema_url */
-  _set_value(msg, logmsg_handle::RAW_RESOURCE_SCHEMA_URL, resource_schema_url, LM_VT_STRING);
-
   /* .otel_raw.scope */
   scope.SerializePartialToString(&serialized);
   _set_value(msg, logmsg_handle::RAW_SCOPE, serialized, LM_VT_PROTOBUF);
-
-  /* .otel_raw.scope_schema_url */
-  _set_value(msg, logmsg_handle::RAW_SCOPE_SCHEMA_URL, scope_schema_url, LM_VT_STRING);
 }
 
 void
 syslogng::grpc::otel::ProtobufParser::store_raw(LogMessage *msg, const LogRecord &log_record)
 {
-  /* .otel_raw.type */
-  _set_value(msg, logmsg_handle::RAW_TYPE, "log", LM_VT_STRING);
+  store_raw_type(msg, "log");
 
   /* .otel_raw.log */
   std::string serialized = log_record.SerializePartialAsString();
@@ -1165,8 +1179,7 @@ syslogng::grpc::otel::ProtobufParser::store_raw(LogMessage *msg, const LogRecord
 void
 syslogng::grpc::otel::ProtobufParser::store_raw(LogMessage *msg, const Metric &metric)
 {
-  /* .otel_raw.type */
-  _set_value(msg, logmsg_handle::RAW_TYPE, "metric", LM_VT_STRING);
+  store_raw_type(msg, "metric");
 
   /* .otel_raw.metric */
   std::string serialized = metric.SerializePartialAsString();
@@ -1176,8 +1189,7 @@ syslogng::grpc::otel::ProtobufParser::store_raw(LogMessage *msg, const Metric &m
 void
 syslogng::grpc::otel::ProtobufParser::store_raw(LogMessage *msg, const Span &span)
 {
-  /* .otel_raw.type */
-  _set_value(msg, logmsg_handle::RAW_TYPE, "span", LM_VT_STRING);
+  store_raw_type(msg, "span");
 
   /* .otel_raw.span */
   std::string serialized = span.SerializePartialAsString();

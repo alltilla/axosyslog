@@ -61,6 +61,9 @@ public:
   }
 
   static void store_peer_address(LogMessage *msg, const ::grpc::string &peer);
+  static void store_metadata(LogMessage *msg, const ::grpc::string &peer,
+                             const std::string &resource_schema_url, const std::string &scope_schema_url);
+  static void store_raw_type(LogMessage *msg, const gchar *type);
   static void store_raw_metadata(LogMessage *msg, const ::grpc::string &peer,
                                  const Resource &resource, const std::string &resource_schema_url,
                                  const InstrumentationScope &scope, const std::string &scope_schema_url);

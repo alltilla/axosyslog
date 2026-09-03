@@ -422,6 +422,28 @@ def test_opentelemetry_source_filterx_dict_mode_batch(
         assert json.loads(file_destination.read_log()) == expected_log
 
 
+def test_opentelemetry_source_filterx_dict_mode_sets_raw_type_and_schema_urls(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+) -> None:
+    opentelemetry_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    file_destination = config.create_file_destination(
+        file_name="output.log",
+        template='"${.otel_raw.type} ${.otel_raw.resource_schema_url} ${.otel_raw.scope_schema_url}\\n"',
+    )
+    config.create_logpath(statements=[opentelemetry_source, file_destination])
+
+    syslog_ng.start(config)
+    opentelemetry_source.write_log(
+        resource=OTelResource(schema_url="https://example.com/resource"),
+        scope=OTelScope(schema_url="https://example.com/scope"),
+        log=LOG_1,
+    )
+
+    assert file_destination.read_log() == "log https://example.com/resource https://example.com/scope"
+
+
 def test_opentelemetry_source_filterx_dict_mode_sets_peer_address(
     syslog_ng: SyslogNg,
     config: SyslogNgConfig,
