@@ -36,6 +36,8 @@ from opentelemetry.proto.common.v1.common_pb2 import AnyValue
 from opentelemetry.proto.metrics.v1.metrics_pb2 import AGGREGATION_TEMPORALITY_CUMULATIVE
 from opentelemetry.proto.metrics.v1.metrics_pb2 import AGGREGATION_TEMPORALITY_DELTA
 from opentelemetry.proto.metrics.v1.metrics_pb2 import Metric
+from opentelemetry.proto.trace.v1.trace_pb2 import Span
+from opentelemetry.proto.trace.v1.trace_pb2 import Status
 
 
 RESOURCE_1 = OTelResource(
@@ -574,6 +576,78 @@ def test_opentelemetry_source_filterx_dict_mode_metric(
         "resource": RESOURCE_1_OUTPUT,
         "scope": SCOPE_1_OUTPUT,
         "metric": metric_output,
+    }
+
+
+def _span() -> Span:
+    span = Span(
+        trace_id=b"\x01\x02",
+        span_id=b"\x03",
+        trace_state="k=v",
+        parent_span_id=b"\x04",
+        name="GET /",
+        kind=Span.SPAN_KIND_SERVER,
+        start_time_unix_nano=1111111111000000000,
+        end_time_unix_nano=2222222222000000000,
+    )
+    span.attributes.add(key="http.method", value=AnyValue(string_value="GET"))
+    event = span.events.add(time_unix_nano=1111111111500000000, name="ev")
+    event.attributes.add(key="e", value=AnyValue(bool_value=True))
+    link = span.links.add(trace_id=b"\x05", span_id=b"\x06", trace_state="x=y")
+    link.attributes.add(key="l", value=AnyValue(int_value=2))
+    span.status.message = "boom"
+    span.status.code = Status.STATUS_CODE_ERROR
+    return span
+
+
+SPAN_OUTPUT = {
+    "trace_id": base64.b64encode(b"\x01\x02").decode("utf-8"),
+    "span_id": base64.b64encode(b"\x03").decode("utf-8"),
+    "trace_state": "k=v",
+    "parent_span_id": base64.b64encode(b"\x04").decode("utf-8"),
+    "name": "GET /",
+    "kind": 2,
+    "start_time_unix_nano": "1111111111.000000",
+    "end_time_unix_nano": "2222222222.000000",
+    "attributes": {"http.method": "GET"},
+    "events": [{"time_unix_nano": "1111111111.500000", "name": "ev", "attributes": {"e": True}}],
+    "links": [
+        {
+            "trace_id": base64.b64encode(b"\x05").decode("utf-8"),
+            "span_id": base64.b64encode(b"\x06").decode("utf-8"),
+            "trace_state": "x=y",
+            "attributes": {"l": 2},
+        },
+    ],
+    "status": {"message": "boom", "code": 2},
+}
+
+
+def test_opentelemetry_source_filterx_dict_mode_span(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+) -> None:
+    opentelemetry_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    filterx = config.create_filterx(r"""
+        $MSG = {
+            "type": ${.otel_raw.type},
+            "has_metric": isset(metric),
+            "resource": resource,
+            "scope": scope,
+            "span": span,
+        };""")
+    file_destination = config.create_file_destination(file_name="output.log", template=TEMPLATE)
+    config.create_logpath(statements=[opentelemetry_source, filterx, file_destination])
+
+    syslog_ng.start(config)
+    opentelemetry_source.write_span(resource=RESOURCE_1, scope=SCOPE_1, span=_span())
+    assert json.loads(file_destination.read_log()) == {
+        "type": "span",
+        "has_metric": False,
+        "resource": RESOURCE_1_OUTPUT,
+        "scope": SCOPE_1_OUTPUT,
+        "span": SPAN_OUTPUT,
     }
 
 

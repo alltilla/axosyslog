@@ -183,12 +183,17 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
       return;
     }
 
+  SourceDriver &owner = static_cast<SourceDriver &>(worker.get_owner());
   ::grpc::Status response_status = ::grpc::Status::OK;
 
   TLSPeerInfo peer_info = { 0 };
   _extract_peer_info(ctx, &peer_info);
 
   int msgs_in_fetch_round = 0;
+
+  FilterXScopeVariableLayout *filterx_scope_var_layout = NULL;
+  if (owner.mode == OSM_FILTERX_DICT)
+    filterx_scope_var_layout = _filterx_dict_layout_new("span");
 
   for (const ResourceSpans &resource_spans : request.resource_spans())
     {
@@ -210,12 +215,27 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
 
               LogMessage *msg = log_msg_new_empty();
               log_msg_set_recvd_rawmsg_size(msg, span.ByteSizeLong());
-
-              ProtobufParser::store_raw_metadata(msg, ctx.peer(), resource, resource_spans_schema_url, scope,
-                                                 scope_spans_schema_url);
-              ProtobufParser::store_raw(msg, span);
               _store_peer_info(msg, peer_info);
-              worker.blocking_post(msg);
+
+              if (owner.mode == OSM_LOGMESSAGE)
+                {
+                  ProtobufParser::store_raw_metadata(msg, ctx.peer(), resource, resource_spans_schema_url, scope,
+                                                     scope_spans_schema_url);
+                  ProtobufParser::store_raw(msg, span);
+                  worker.blocking_post(msg);
+                }
+              else
+                {
+                  ProtobufParser::store_metadata(msg, ctx.peer(), resource_spans_schema_url, scope_spans_schema_url);
+                  ProtobufParser::store_raw_type(msg, "span");
+
+                  if (!_post_as_filterx_dicts(worker, filterx_scope_var_layout, msg, resource, scope, "span", span))
+                    {
+                      msg_error("opentelemetry: failed to convert span to FilterX dicts, dropping message");
+                      log_msg_unref(msg);
+                      continue;
+                    }
+                }
 
               msgs_in_fetch_round++;
               if (msgs_in_fetch_round == worker.get_owner().get_fetch_limit())
@@ -229,6 +249,8 @@ syslogng::grpc::otel::TraceServiceCall::Proceed(bool ok)
 
   if (msgs_in_fetch_round != 0)
     log_threaded_source_worker_close_batch(&worker.super->super);
+
+  filterx_scope_variable_layout_free(filterx_scope_var_layout);
 
   status = SEND_RESPONSE;
   responder.Finish(response, response_status, this);
