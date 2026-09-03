@@ -31,14 +31,16 @@ from grpc import secure_channel
 from grpc import ssl_channel_credentials
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2_grpc import LogsServiceStub
+from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
+from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2_grpc import MetricsServiceStub
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2_grpc import TraceServiceStub
 from opentelemetry.proto.common.v1.common_pb2 import AnyValue
 from opentelemetry.proto.common.v1.common_pb2 import ArrayValue
 from opentelemetry.proto.common.v1.common_pb2 import InstrumentationScope
 from opentelemetry.proto.common.v1.common_pb2 import KeyValue
 from opentelemetry.proto.common.v1.common_pb2 import KeyValueList
 from opentelemetry.proto.logs.v1.logs_pb2 import LogRecord
-from opentelemetry.proto.logs.v1.logs_pb2 import ResourceLogs
-from opentelemetry.proto.logs.v1.logs_pb2 import ScopeLogs
 from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_DEBUG
 from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_DEBUG2
 from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_DEBUG3
@@ -64,7 +66,9 @@ from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_WARN
 from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_WARN2
 from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_WARN3
 from opentelemetry.proto.logs.v1.logs_pb2 import SEVERITY_NUMBER_WARN4
+from opentelemetry.proto.metrics.v1.metrics_pb2 import Metric
 from opentelemetry.proto.resource.v1.resource_pb2 import Resource
+from opentelemetry.proto.trace.v1.trace_pb2 import Span
 
 
 class PyToOTelConverter:
@@ -205,6 +209,30 @@ class OTelResourceScopeLog:
         self.log = log if log is not None else OTelLog()
 
 
+class OTelResourceScopeMetric:
+    def __init__(
+        self,
+        resource: typing.Optional[OTelResource] = None,
+        scope: typing.Optional[OTelScope] = None,
+        metric: typing.Optional[Metric] = None,
+    ) -> None:
+        self.resource = resource if resource is not None else OTelResource()
+        self.scope = scope if scope is not None else OTelScope()
+        self.metric = metric if metric is not None else Metric()
+
+
+class OTelResourceScopeSpan:
+    def __init__(
+        self,
+        resource: typing.Optional[OTelResource] = None,
+        scope: typing.Optional[OTelScope] = None,
+        span: typing.Optional[Span] = None,
+    ) -> None:
+        self.resource = resource if resource is not None else OTelResource()
+        self.scope = scope if scope is not None else OTelScope()
+        self.span = span if span is not None else Span()
+
+
 class OpenTelemetryIO():
     def __init__(self, port: int, address: str = "127.0.0.1") -> None:
         self.__port = port
@@ -229,44 +257,66 @@ class OpenTelemetryIO():
             return secure_channel(target, self.__credentials)
         return insecure_channel(target)
 
-    def __create_request(self, resource_scope_logs: typing.List[OTelResourceScopeLog]) -> ExportLogsServiceRequest:
-        request = ExportLogsServiceRequest()
-        for resource_scope_log in resource_scope_logs:
-            resource_logs = ResourceLogs()
-            resource_logs.resource.CopyFrom(resource_scope_log.resource.to_otel())
-            resource_logs.schema_url = resource_scope_log.resource.schema_url
+    @staticmethod
+    def __group_by_resource_and_scope(
+        request: typing.Any,
+        items: typing.List[typing.Any],
+        resource_group_field: str,
+        scope_group_field: str,
+        signal_field: str,
+        signal_to_otel: typing.Callable[[typing.Any], typing.Any],
+    ) -> typing.Any:
+        for item in items:
+            resource = item.resource.to_otel()
+            resource_group = next(
+                (
+                    group for group in getattr(request, resource_group_field)
+                    if group.resource == resource and group.schema_url == item.resource.schema_url
+                ),
+                None,
+            )
+            if resource_group is None:
+                resource_group = getattr(request, resource_group_field).add()
+                resource_group.resource.CopyFrom(resource)
+                resource_group.schema_url = item.resource.schema_url
 
-            new_resource_logs = True
-            for stored_resource_logs in request.resource_logs:
-                if stored_resource_logs.resource == resource_logs.resource and stored_resource_logs.schema_url == resource_logs.schema_url:
-                    resource_logs = stored_resource_logs
-                    new_resource_logs = False
-                    break
-            if new_resource_logs:
-                request.resource_logs.append(resource_logs)
-                resource_logs = request.resource_logs[-1]
+            scope = item.scope.to_otel()
+            scope_group = next(
+                (
+                    group for group in getattr(resource_group, scope_group_field)
+                    if group.scope == scope and group.schema_url == item.scope.schema_url
+                ),
+                None,
+            )
+            if scope_group is None:
+                scope_group = getattr(resource_group, scope_group_field).add()
+                scope_group.scope.CopyFrom(scope)
+                scope_group.schema_url = item.scope.schema_url
 
-            scope_logs = ScopeLogs()
-            scope_logs.scope.CopyFrom(resource_scope_log.scope.to_otel())
-            scope_logs.schema_url = resource_scope_log.scope.schema_url
-
-            new_scope_logs = True
-            for stored_scope_logs in resource_logs.scope_logs:
-                if stored_scope_logs.scope == scope_logs.scope and stored_scope_logs.schema_url == scope_logs.schema_url:
-                    scope_logs = stored_scope_logs
-                    new_scope_logs = False
-                    break
-            if new_scope_logs:
-                resource_logs.scope_logs.append(scope_logs)
-                scope_logs = resource_logs.scope_logs[-1]
-
-            log_record = resource_scope_log.log.to_otel()
-            scope_logs.log_records.append(log_record)
+            getattr(scope_group, signal_field).append(signal_to_otel(item))
 
         return request
 
     def send_logs(self, resource_scope_logs: typing.List[OTelResourceScopeLog]) -> None:
-        request = self.__create_request(resource_scope_logs)
+        request = self.__group_by_resource_and_scope(
+            ExportLogsServiceRequest(), resource_scope_logs, "resource_logs", "scope_logs", "log_records",
+            lambda item: item.log.to_otel(),
+        )
         with self.__create_channel() as channel:
-            stub = LogsServiceStub(channel)
-            stub.Export(request)
+            LogsServiceStub(channel).Export(request)
+
+    def send_metrics(self, resource_scope_metrics: typing.List[OTelResourceScopeMetric]) -> None:
+        request = self.__group_by_resource_and_scope(
+            ExportMetricsServiceRequest(), resource_scope_metrics, "resource_metrics", "scope_metrics", "metrics",
+            lambda item: item.metric,
+        )
+        with self.__create_channel() as channel:
+            MetricsServiceStub(channel).Export(request)
+
+    def send_spans(self, resource_scope_spans: typing.List[OTelResourceScopeSpan]) -> None:
+        request = self.__group_by_resource_and_scope(
+            ExportTraceServiceRequest(), resource_scope_spans, "resource_spans", "scope_spans", "spans",
+            lambda item: item.span,
+        )
+        with self.__create_channel() as channel:
+            TraceServiceStub(channel).Export(request)
