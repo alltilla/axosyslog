@@ -22,6 +22,7 @@
  */
 
 #include "filterx/otel-dict-converter.hpp"
+#include "filterx/func-otel-dict.h"
 
 #include "compat/cpp-start.h"
 #include "apphook.h"
@@ -30,6 +31,8 @@
 #include "filterx/object-dict.h"
 #include "filterx/object-string.h"
 #include "filterx/object-datetime.h"
+#include "filterx/filterx-eval.h"
+#include "filterx/filterx-private.h"
 #include "compat/cpp-end.h"
 
 #include "opentelemetry/proto/common/v1/common.pb.h"
@@ -73,6 +76,24 @@ _format_json(const gchar *json, google::protobuf::Message &message)
   bool success = otel_filterx_dict_to_protobuf_message(dict, message);
   filterx_object_unref(dict);
   return success;
+}
+
+#define SIMPLE_FN(name) ((FilterXSimpleFunctionProto) filterx_function_##name##_construct(NULL))
+
+/* arg may be NULL, its reference is taken over */
+static FilterXObject *
+_call(FilterXSimpleFunctionProto fn, FilterXObject *arg)
+{
+  GList *args = arg ? g_list_append(NULL, filterx_function_arg_new(NULL, filterx_object_expr_new(arg))) : NULL;
+  GError *error = NULL;
+  FilterXExpr *expr = filterx_simple_function_new("test", filterx_function_args_new(args, NULL), fn, &error);
+  cr_assert_null(error);
+
+  FilterXObject *result = init_and_eval_expr(expr);
+  if (!result)
+    filterx_eval_clear_errors();
+  filterx_expr_unref(expr);
+  return result;
 }
 
 static void
@@ -403,6 +424,31 @@ Test(otel_dict_converter, format_datetime_attribute_as_microseconds)
   cr_assert_eq(resource.attributes(0).value().int_value(), 1111111111000005);
 
   filterx_object_unref(dict);
+}
+
+Test(otel_dict_converter, parse_otel_function)
+{
+  LogRecord log_record;
+  log_record.set_time_unix_nano(T1);
+  log_record.mutable_body()->set_string_value("hello");
+  std::string serialized = log_record.SerializeAsString();
+
+  FilterXObject *dict = _call(SIMPLE_FN(parse_otel_logrecord),
+                              filterx_protobuf_new(serialized.data(), serialized.size()));
+  cr_assert(dict);
+  assert_object_json_equals(dict, "{\"time_unix_nano\":\"1111111111.000000\",\"body\":\"hello\"}");
+  filterx_object_unref(dict);
+
+  dict = _call(SIMPLE_FN(parse_otel_logrecord), filterx_bytes_new(serialized.data(), serialized.size()));
+  cr_assert(dict);
+  filterx_object_unref(dict);
+}
+
+Test(otel_dict_converter, parse_otel_function_rejects_bad_arguments)
+{
+  cr_assert_not(_call(SIMPLE_FN(parse_otel_span), NULL));
+  cr_assert_not(_call(SIMPLE_FN(parse_otel_span), filterx_string_new("not protobuf", -1)));
+  cr_assert_not(_call(SIMPLE_FN(parse_otel_span), filterx_bytes_new("\xff\xff\xff", 3)));
 }
 
 static void

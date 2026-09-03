@@ -20,7 +20,9 @@ modules_grpc_otel_filterx_libfilterx_la_SOURCES = \
   modules/grpc/otel/filterx/otel-field-converter.cpp \
   modules/grpc/otel/filterx/otel-field-converter.hpp \
   modules/grpc/otel/filterx/otel-dict-converter.cpp \
-  modules/grpc/otel/filterx/otel-dict-converter.hpp
+  modules/grpc/otel/filterx/otel-dict-converter.hpp \
+  modules/grpc/otel/filterx/func-otel-dict.cpp \
+  modules/grpc/otel/filterx/func-otel-dict.h
 
 modules_grpc_otel_filterx_libfilterx_la_CXXFLAGS = \
   $(AM_CXXFLAGS) \

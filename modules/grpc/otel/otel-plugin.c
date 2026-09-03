@@ -25,6 +25,7 @@
 #include "plugin.h"
 #include "plugin-types.h"
 #include "filterx/object-otel.h"
+#include "filterx/func-otel-dict.h"
 #include "otel-logmsg-handles.h"
 #include "protos/apphook.h"
 
@@ -78,6 +79,11 @@ static Plugin otel_plugins[] =
   FILTERX_SIMPLE_FUNCTION_PLUGIN(otel_scope),
   FILTERX_SIMPLE_FUNCTION_PLUGIN(otel_kvlist),
   FILTERX_SIMPLE_FUNCTION_PLUGIN(otel_array),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_resource),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_scope),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_logrecord),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_span),
+  FILTERX_SIMPLE_FUNCTION_PLUGIN(parse_otel_metric),
 };
 
 gboolean
