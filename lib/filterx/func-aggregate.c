@@ -34,6 +34,7 @@
 #include "scratch-buffers.h"
 #include "ml-batched-timer.h"
 #include "mainloop.h"
+#include "mainloop-call.h"
 #include "generic-number.h"
 #include "parse-number.h"
 #include "cfg.h"
@@ -593,6 +594,15 @@ _expire_entry(AggregateSharedState *shared, AggregateEntry *entry)
   g_mutex_lock(&shared->lock);
   gboolean already_closed = entry->closed;
   entry->closed = TRUE;
+  if (!already_closed)
+    {
+      /* take over the hash table's reference before dropping the lock: the
+       * replay below runs the rest of the log path and must not hold it, and
+       * a message arriving for this key meanwhile has to open a new window
+       * instead of merging into the values being replayed */
+      _aggregate_entry_ref(entry);
+      g_hash_table_remove(shared->entries, entry->tuple_key);
+    }
   g_mutex_unlock(&shared->lock);
 
   if (already_closed)
@@ -601,9 +611,7 @@ _expire_entry(AggregateSharedState *shared, AggregateEntry *entry)
   if (shared->continuation.statement_expr)
     _replay_and_forward(shared, entry);
 
-  g_mutex_lock(&shared->lock);
-  g_hash_table_remove(shared->entries, entry->tuple_key);
-  g_mutex_unlock(&shared->lock);
+  _aggregate_entry_unref(entry);
 }
 
 static void
@@ -845,6 +853,14 @@ _eval_fx_aggregate(FilterXExpr *s)
   filterx_eval_disable_allocator(&allocator_state);
 
   FilterXObject *tuple_key = _normalize_key_as_tuple(key);
+
+  /* _aggregate() arms or cancels the entry's timer with the lock held, and
+   * posting that to the main loop first waits for whatever this thread
+   * posted before.  The main loop takes shared->lock itself -- expiring an
+   * entry, and evaluating any aggregate() it reaches while replaying a
+   * timed out window into the rest of the log path -- so this wait belongs
+   * in front of the lock, never under it. */
+  main_loop_wait_for_pending_call_to_finish();
 
   g_mutex_lock(&self->shared->lock);
   result = _aggregate(self->shared, tuple_key, values, close, self->timeout_seconds, self->field_aggregators);
