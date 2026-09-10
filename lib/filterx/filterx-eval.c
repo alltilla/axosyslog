@@ -417,11 +417,13 @@ filterx_eval_begin_context(FilterXEvalContext *context,
     {
       context->weak_refs = previous_context->weak_refs;
       context->allocator = previous_context->allocator;
-      if (filterx_scope_is_fork_point(previous_context->scope))
+      if (context->allocator && filterx_scope_is_fork_point(previous_context->scope))
         {
           /* save allocator position when crossing fork points.
            * scopes are allowed to move variables from previous scopes until
-           * they reach a fork point.
+           * they reach a fork point.  a context duplicated by
+           * filterx_eval_context_dup() has no allocator, its values are
+           * g_malloc()ed and have no position to track.
            */
           filterx_allocator_save_position(context->allocator, &context->allocator_position);
         }
@@ -461,7 +463,8 @@ filterx_eval_end_context(FilterXEvalContext *context)
        * from previous scopes (this is only allowed until a fork point is reached).
        */
       g_ptr_array_set_size(context->weak_refs, context->weak_refs_offset);
-      filterx_allocator_restore_position(context->allocator, &context->allocator_position);
+      if (context->allocator)
+        filterx_allocator_restore_position(context->allocator, &context->allocator_position);
     }
 
   context->failure_info = NULL;
