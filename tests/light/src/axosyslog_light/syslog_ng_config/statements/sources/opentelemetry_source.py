@@ -28,10 +28,14 @@ from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OpenTelemet
 from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OTelLog
 from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OTelResource
 from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OTelResourceScopeLog
+from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OTelResourceScopeMetric
+from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OTelResourceScopeSpan
 from axosyslog_light.driver_io.opentelemetry.opentelemetry_io import OTelScope
 from axosyslog_light.syslog_ng_config.statements.sources.source_driver import SourceDriver
 from axosyslog_light.syslog_ng_ctl.legacy_stats_handler import LegacyStatsHandler
 from axosyslog_light.syslog_ng_ctl.prometheus_stats_handler import PrometheusStatsHandler
+from opentelemetry.proto.metrics.v1.metrics_pb2 import Metric
+from opentelemetry.proto.trace.v1.trace_pb2 import Span
 
 
 class OpenTelemetrySource(SourceDriver):
@@ -64,3 +68,25 @@ class OpenTelemetrySource(SourceDriver):
 
     def write_logs(self, resource_scope_logs: list[OTelResourceScopeLog]) -> None:
         self.io.send_logs(resource_scope_logs)
+
+    def write_metric(
+        self,
+        resource: typing.Optional[OTelResource] = None,
+        scope: typing.Optional[OTelScope] = None,
+        metric: typing.Optional[Metric] = None,
+    ) -> None:
+        self.io.send_metrics([OTelResourceScopeMetric(resource, scope, metric)])
+
+    def write_metrics(self, resource_scope_metrics: list[OTelResourceScopeMetric]) -> None:
+        self.io.send_metrics(resource_scope_metrics)
+
+    def write_span(
+        self,
+        resource: typing.Optional[OTelResource] = None,
+        scope: typing.Optional[OTelScope] = None,
+        span: typing.Optional[Span] = None,
+    ) -> None:
+        self.io.send_spans([OTelResourceScopeSpan(resource, scope, span)])
+
+    def write_spans(self, resource_scope_spans: list[OTelResourceScopeSpan]) -> None:
+        self.io.send_spans(resource_scope_spans)

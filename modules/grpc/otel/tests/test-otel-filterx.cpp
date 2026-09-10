@@ -27,6 +27,7 @@
 #include "filterx/object-otel-array.hpp"
 
 #include "compat/cpp-start.h"
+#include "filterx/object-otel.h"
 #include "filterx/object-string.h"
 #include "filterx/object-primitive.h"
 #include "filterx/object-datetime.h"
@@ -149,6 +150,28 @@ _assert_filterx_otel_array_element(FilterXObject *obj, FilterXObject *key,
   filterx_object_unref(filterx_otel_array);
 }
 
+
+static gint64
+_enum_value(const gchar *name)
+{
+  for (FilterXEnumDefinition *e = (FilterXEnumDefinition *) grpc_otel_filterx_enum_construct(NULL); e->name; e++)
+    {
+      if (strcmp(e->name, name) == 0)
+        return e->value;
+    }
+  cr_assert_fail("enum %s is not registered", name);
+  return -1;
+}
+
+Test(otel_filterx, enums)
+{
+  cr_assert_eq(_enum_value("SEVERITY_NUMBER_INFO"), 9);
+  cr_assert_eq(_enum_value("LOG_RECORD_FLAGS_TRACE_FLAGS_MASK"), 0xff);
+  cr_assert_eq(_enum_value("SPAN_KIND_SERVER"), 2);
+  cr_assert_eq(_enum_value("STATUS_CODE_ERROR"), 2);
+  cr_assert_eq(_enum_value("AGGREGATION_TEMPORALITY_CUMULATIVE"), 2);
+  cr_assert_eq(_enum_value("DATA_POINT_FLAGS_NO_RECORDED_VALUE_MASK"), 1);
+}
 
 /* LogRecord */
 

@@ -5,7 +5,8 @@ modules_grpc_otel_tests_TESTS = \
   modules/grpc/otel/tests/test_otel_protobuf_parser \
   modules/grpc/otel/tests/test_otel_protobuf_formatter \
   modules/grpc/otel/tests/test_syslog_ng_otlp \
-  modules/grpc/otel/tests/test_otel_filterx
+  modules/grpc/otel/tests/test_otel_filterx \
+  modules/grpc/otel/tests/test_otel_dict_converter
 
 check_PROGRAMS += ${modules_grpc_otel_tests_TESTS}
 endif
@@ -86,6 +87,27 @@ modules_grpc_otel_tests_test_otel_filterx_CXXFLAGS = \
   -I$(top_builddir)/modules/grpc/otel
 
 modules_grpc_otel_tests_test_otel_filterx_LDADD = \
+  $(TEST_LDADD) \
+  $(top_builddir)/modules/grpc/otel/libotel_cpp.la \
+  $(top_builddir)/modules/grpc/protos/libgrpc-protos.la \
+  $(top_builddir)/modules/grpc/otel/filterx/libfilterx.la
+
+modules_grpc_otel_tests_test_otel_dict_converter_SOURCES = \
+  modules/grpc/otel/tests/test-otel-dict-converter.cpp
+
+EXTRA_modules_grpc_otel_tests_test_otel_dict_converter_DEPENDENCIES = \
+  $(top_builddir)/modules/grpc/otel/libotel_cpp.la \
+  $(top_builddir)/modules/grpc/protos/libgrpc-protos.la
+
+modules_grpc_otel_tests_test_otel_dict_converter_CXXFLAGS = \
+  $(TEST_CXXFLAGS) \
+  $(PROTOBUF_CFLAGS) $(GRPCPP_CFLAGS) \
+  $(GRPC_COMMON_CFLAGS) \
+  -I$(OPENTELEMETRY_PROTO_BUILDDIR) \
+  -I$(top_srcdir)/modules/grpc/otel \
+  -I$(top_builddir)/modules/grpc/otel
+
+modules_grpc_otel_tests_test_otel_dict_converter_LDADD = \
   $(TEST_LDADD) \
   $(top_builddir)/modules/grpc/otel/libotel_cpp.la \
   $(top_builddir)/modules/grpc/protos/libgrpc-protos.la \

@@ -32,6 +32,12 @@ from axosyslog_light.syslog_ng_config.statements.sources.opentelemetry_source im
 from axosyslog_light.syslog_ng_config.statements.sources.opentelemetry_source import OTelResourceScopeLog
 from axosyslog_light.syslog_ng_config.statements.sources.opentelemetry_source import OTelScope
 from axosyslog_light.syslog_ng_config.syslog_ng_config import SyslogNgConfig
+from opentelemetry.proto.common.v1.common_pb2 import AnyValue
+from opentelemetry.proto.metrics.v1.metrics_pb2 import AGGREGATION_TEMPORALITY_CUMULATIVE
+from opentelemetry.proto.metrics.v1.metrics_pb2 import AGGREGATION_TEMPORALITY_DELTA
+from opentelemetry.proto.metrics.v1.metrics_pb2 import Metric
+from opentelemetry.proto.trace.v1.trace_pb2 import Span
+from opentelemetry.proto.trace.v1.trace_pb2 import Status
 
 
 RESOURCE_1 = OTelResource(
@@ -420,6 +426,312 @@ def test_opentelemetry_source_filterx_dict_mode_batch(
 
     for expected_log in expected_logs:
         assert json.loads(file_destination.read_log()) == expected_log
+
+
+def _metric_gauge() -> Metric:
+    metric = Metric(name="gauge", description="d", unit="1")
+    data_point = metric.gauge.data_points.add()
+    data_point.time_unix_nano = 1111111111000000000
+    data_point.as_double = 1.5
+    data_point.attributes.add(key="a", value=AnyValue(string_value="b"))
+    return metric
+
+
+def _metric_sum() -> Metric:
+    metric = Metric(name="sum")
+    data_point = metric.sum.data_points.add()
+    data_point.start_time_unix_nano = 1111111111000000000
+    data_point.time_unix_nano = 2222222222000000000
+    data_point.as_int = 5
+    metric.sum.aggregation_temporality = AGGREGATION_TEMPORALITY_CUMULATIVE
+    metric.sum.is_monotonic = True
+    return metric
+
+
+def _metric_histogram() -> Metric:
+    metric = Metric(name="histogram")
+    data_point = metric.histogram.data_points.add()
+    data_point.time_unix_nano = 1111111111000000000
+    data_point.count = 3
+    data_point.sum = 6.5
+    data_point.bucket_counts.extend([1, 2])
+    data_point.explicit_bounds.extend([0.5])
+    data_point.min = 0.5
+    data_point.max = 2.5
+    metric.histogram.aggregation_temporality = AGGREGATION_TEMPORALITY_DELTA
+    return metric
+
+
+def _metric_exponential_histogram() -> Metric:
+    metric = Metric(name="exponential_histogram")
+    data_point = metric.exponential_histogram.data_points.add()
+    data_point.time_unix_nano = 1111111111000000000
+    data_point.count = 4
+    data_point.scale = -1
+    data_point.zero_count = 1
+    data_point.positive.offset = 2
+    data_point.positive.bucket_counts.extend([1, 1])
+    data_point.negative.offset = -3
+    data_point.negative.bucket_counts.extend([1])
+    metric.exponential_histogram.aggregation_temporality = AGGREGATION_TEMPORALITY_CUMULATIVE
+    return metric
+
+
+def _metric_summary() -> Metric:
+    metric = Metric(name="summary")
+    data_point = metric.summary.data_points.add()
+    data_point.time_unix_nano = 1111111111000000000
+    data_point.count = 2
+    data_point.sum = 3.5
+    data_point.quantile_values.add(quantile=0.5, value=1.5)
+    data_point.quantile_values.add(quantile=0.75, value=2.5)
+    return metric
+
+
+METRIC_SUM_OUTPUT = {
+    "name": "sum",
+    "sum": {
+        "data_points": [{"start_time_unix_nano": "1111111111.000000", "time_unix_nano": "2222222222.000000", "as_int": 5}],
+        "aggregation_temporality": 2, "is_monotonic": True,
+    },
+}
+
+
+@pytest.mark.parametrize(
+    "metric, metric_output",
+    [
+        (
+            _metric_gauge(),
+            {
+                "name": "gauge", "description": "d", "unit": "1",
+                "gauge": {"data_points": [{"time_unix_nano": "1111111111.000000", "as_double": 1.5, "attributes": {"a": "b"}}]},
+            },
+        ),
+        (_metric_sum(), METRIC_SUM_OUTPUT),
+        (
+            _metric_histogram(),
+            {
+                "name": "histogram",
+                "histogram": {
+                    "data_points": [{
+                        "time_unix_nano": "1111111111.000000", "count": 3, "sum": 6.5,
+                        "bucket_counts": [1, 2], "explicit_bounds": [0.5], "min": 0.5, "max": 2.5,
+                    }],
+                    "aggregation_temporality": 1,
+                },
+            },
+        ),
+        (
+            _metric_exponential_histogram(),
+            {
+                "name": "exponential_histogram",
+                "exponential_histogram": {
+                    "data_points": [{
+                        "time_unix_nano": "1111111111.000000", "count": 4, "scale": -1, "zero_count": 1,
+                        "positive": {"offset": 2, "bucket_counts": [1, 1]}, "negative": {"offset": -3, "bucket_counts": [1]},
+                    }],
+                    "aggregation_temporality": 2,
+                },
+            },
+        ),
+        (
+            _metric_summary(),
+            {
+                "name": "summary",
+                "summary": {
+                    "data_points": [{
+                        "time_unix_nano": "1111111111.000000", "count": 2, "sum": 3.5,
+                        "quantile_values": [{"quantile": 0.5, "value": 1.5}, {"quantile": 0.75, "value": 2.5}],
+                    }],
+                },
+            },
+        ),
+    ],
+    ids=["gauge", "sum", "histogram", "exponential_histogram", "summary"],
+)
+def test_opentelemetry_source_filterx_dict_mode_metric(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+    metric: Metric,
+    metric_output: typing.Dict[str, typing.Any],
+) -> None:
+    opentelemetry_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    filterx = config.create_filterx(r"""
+        $MSG = {
+            "type": ${.otel_raw.type},
+            "has_log": isset(log),
+            "resource": resource,
+            "scope": scope,
+            "metric": metric,
+        };""")
+    file_destination = config.create_file_destination(file_name="output.log", template=TEMPLATE)
+    config.create_logpath(statements=[opentelemetry_source, filterx, file_destination])
+
+    syslog_ng.start(config)
+    opentelemetry_source.write_metric(resource=RESOURCE_1, scope=SCOPE_1, metric=metric)
+    assert json.loads(file_destination.read_log()) == {
+        "type": "metric",
+        "has_log": False,
+        "resource": RESOURCE_1_OUTPUT,
+        "scope": SCOPE_1_OUTPUT,
+        "metric": metric_output,
+    }
+
+
+def _span() -> Span:
+    span = Span(
+        trace_id=b"\x01\x02",
+        span_id=b"\x03",
+        trace_state="k=v",
+        parent_span_id=b"\x04",
+        name="GET /",
+        kind=Span.SPAN_KIND_SERVER,
+        start_time_unix_nano=1111111111000000000,
+        end_time_unix_nano=2222222222000000000,
+    )
+    span.attributes.add(key="http.method", value=AnyValue(string_value="GET"))
+    event = span.events.add(time_unix_nano=1111111111500000000, name="ev")
+    event.attributes.add(key="e", value=AnyValue(bool_value=True))
+    link = span.links.add(trace_id=b"\x05", span_id=b"\x06", trace_state="x=y")
+    link.attributes.add(key="l", value=AnyValue(int_value=2))
+    span.status.message = "boom"
+    span.status.code = Status.STATUS_CODE_ERROR
+    return span
+
+
+SPAN_OUTPUT = {
+    "trace_id": base64.b64encode(b"\x01\x02").decode("utf-8"),
+    "span_id": base64.b64encode(b"\x03").decode("utf-8"),
+    "trace_state": "k=v",
+    "parent_span_id": base64.b64encode(b"\x04").decode("utf-8"),
+    "name": "GET /",
+    "kind": 2,
+    "start_time_unix_nano": "1111111111.000000",
+    "end_time_unix_nano": "2222222222.000000",
+    "attributes": {"http.method": "GET"},
+    "events": [{"time_unix_nano": "1111111111.500000", "name": "ev", "attributes": {"e": True}}],
+    "links": [
+        {
+            "trace_id": base64.b64encode(b"\x05").decode("utf-8"),
+            "span_id": base64.b64encode(b"\x06").decode("utf-8"),
+            "trace_state": "x=y",
+            "attributes": {"l": 2},
+        },
+    ],
+    "status": {"message": "boom", "code": 2},
+}
+
+
+def test_opentelemetry_source_filterx_dict_mode_span(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+) -> None:
+    opentelemetry_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    filterx = config.create_filterx(r"""
+        $MSG = {
+            "type": ${.otel_raw.type},
+            "has_metric": isset(metric),
+            "resource": resource,
+            "scope": scope,
+            "span": span,
+        };""")
+    file_destination = config.create_file_destination(file_name="output.log", template=TEMPLATE)
+    config.create_logpath(statements=[opentelemetry_source, filterx, file_destination])
+
+    syslog_ng.start(config)
+    opentelemetry_source.write_span(resource=RESOURCE_1, scope=SCOPE_1, span=_span())
+    assert json.loads(file_destination.read_log()) == {
+        "type": "span",
+        "has_metric": False,
+        "resource": RESOURCE_1_OUTPUT,
+        "scope": SCOPE_1_OUTPUT,
+        "span": SPAN_OUTPUT,
+    }
+
+
+@pytest.mark.parametrize(
+    "signal, write, signal_output",
+    [
+        ("log", lambda source, resource, scope: source.write_log(resource=resource, scope=scope, log=LOG_1), LOG_1_OUTPUT),
+        ("metric", lambda source, resource, scope: source.write_metric(resource=resource, scope=scope, metric=_metric_sum()), METRIC_SUM_OUTPUT),
+        ("span", lambda source, resource, scope: source.write_span(resource=resource, scope=scope, span=_span()), SPAN_OUTPUT),
+    ],
+    ids=["log", "metric", "span"],
+)
+def test_opentelemetry_filterx_dict_round_trip_through_destination(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+    signal: str,
+    write: typing.Callable[[typing.Any, OTelResource, OTelScope], None],
+    signal_output: typing.Dict[str, typing.Any],
+) -> None:
+    receiver_port = port_allocator()
+
+    sender_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    format_filterx = config.create_filterx(r"""
+        ${.otel_raw.resource} = format_otel_resource(resource);
+        ${.otel_raw.scope} = format_otel_scope(scope);
+        if (isset(log)) {
+            ${.otel_raw.log} = format_otel_logrecord(log);
+        } elif (isset(metric)) {
+            ${.otel_raw.metric} = format_otel_metric(metric);
+        } else {
+            ${.otel_raw.span} = format_otel_span(span);
+        };""")
+    opentelemetry_destination = config.create_opentelemetry_destination(port=receiver_port)
+    config.create_logpath(statements=[sender_source, format_filterx, opentelemetry_destination])
+
+    receiver_source = config.create_opentelemetry_source(port=receiver_port, mode="filterx-dict")
+    dump_filterx = config.create_filterx(r"""
+        $MSG = {
+            "type": ${.otel_raw.type},
+            "resource_schema_url": ${.otel_raw.resource_schema_url},
+            "scope_schema_url": ${.otel_raw.scope_schema_url},
+            "resource": resource,
+            "scope": scope,
+            "signal": isset(log) ? log : (isset(metric) ? metric : span),
+        };""")
+    file_destination = config.create_file_destination(file_name="output.log", template=TEMPLATE)
+    config.create_logpath(statements=[receiver_source, dump_filterx, file_destination])
+
+    syslog_ng.start(config)
+    resource = OTelResource(attributes={"r": "1"}, schema_url="https://example.com/resource")
+    scope = OTelScope(name="s", schema_url="https://example.com/scope")
+    write(sender_source, resource, scope)
+
+    assert json.loads(file_destination.read_log()) == {
+        "type": signal,
+        "resource_schema_url": "https://example.com/resource",
+        "scope_schema_url": "https://example.com/scope",
+        "resource": {"attributes": {"r": "1"}},
+        "scope": {"name": "s"},
+        "signal": signal_output,
+    }
+
+
+def test_opentelemetry_source_filterx_dict_mode_sets_raw_type_and_schema_urls(
+    syslog_ng: SyslogNg,
+    config: SyslogNgConfig,
+    port_allocator,
+) -> None:
+    opentelemetry_source = config.create_opentelemetry_source(port=port_allocator(), mode="filterx-dict")
+    file_destination = config.create_file_destination(
+        file_name="output.log",
+        template='"${.otel_raw.type} ${.otel_raw.resource_schema_url} ${.otel_raw.scope_schema_url}\\n"',
+    )
+    config.create_logpath(statements=[opentelemetry_source, file_destination])
+
+    syslog_ng.start(config)
+    opentelemetry_source.write_log(
+        resource=OTelResource(schema_url="https://example.com/resource"),
+        scope=OTelScope(schema_url="https://example.com/scope"),
+        log=LOG_1,
+    )
+
+    assert file_destination.read_log() == "log https://example.com/resource https://example.com/scope"
 
 
 def test_opentelemetry_source_filterx_dict_mode_sets_peer_address(

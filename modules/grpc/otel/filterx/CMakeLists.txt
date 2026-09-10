@@ -20,6 +20,10 @@ set(OTEL_LOGRECORD_CPP_SOURCES
   object-otel-array.hpp
   otel-field-converter.hpp
   otel-field-converter.cpp
+  otel-dict-converter.hpp
+  otel-dict-converter.cpp
+  func-otel-dict.h
+  func-otel-dict.cpp
 )
 
 add_module(
