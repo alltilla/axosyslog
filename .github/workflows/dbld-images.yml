@@ -93,11 +93,14 @@ jobs:
           - ubuntu-plucky
           - ubuntu-questing
           - ubuntu-resolute
+        arch:
+          - amd64
         include:
           # image-devshell builds debian-testing and tarball first, so every layer of
           # the chain bases on the image built in this job, not on the registry's
           # previous :latest
           - image: devshell
+            arch: amd64
       fail-fast: false
     steps:
       - name: Checkout source code
@@ -122,11 +125,39 @@ jobs:
         if: needs.prepare.outputs.upload == 'true'
         env:
           IMAGE: ${{ matrix.image }}
+          ARCH: ${{ matrix.arch }}
         run: |
           case "${IMAGE}" in
             devshell) images="debian-testing tarball devshell" ;;
             *) images="${IMAGE}" ;;
           esac
           for image in ${images}; do
-            dbld/rules "push-image-${image}"
+            dbld/rules "push-image-${image}" IMAGE_ARCH="${ARCH}"
           done
+
+  publish:
+    name: Publish
+    needs: [prepare, build]
+    # a failed build must not hold back the other images' :latest, -k merges what was pushed
+    if: ${{ !cancelled() && needs.prepare.outputs.upload == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout source
+      packages: write  # push the manifest lists to GHCR
+    env:
+      CONTAINER_REGISTRY: ${{ needs.prepare.outputs.container-registry }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge the architecture tags into :latest
+        run: dbld/rules -k merge-images
