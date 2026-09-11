@@ -70,7 +70,7 @@ jobs:
   build:
     name: Build
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read  # checkout source
       packages: write  # push dbld images to GHCR
@@ -101,6 +101,8 @@ jobs:
           # previous :latest
           - image: devshell
             arch: amd64
+          - image: devshell
+            arch: arm64
       fail-fast: false
     steps:
       - name: Checkout source code
