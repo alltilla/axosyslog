@@ -515,7 +515,13 @@ esac
 if [ -n "$BIN" ] && [ "$DO_INSTALL" -eq 1 ] && [ -x "$BIN" ]; then
   say "installed binary: $BIN"
   # smoke test: a binary that can't start (missing lib, bad module dir) must fail here
-  ver="$("$BIN" -V)" || fail "installed binary does not run: $BIN"
+  if [ "$MODE" = dbld ]; then
+    # the dbld binary is linked against the image's libraries, so it runs in the image
+    ver="$(cd "$ROOT" && ./dbld/rules -s run RUN_COMMAND="/install/sbin/syslog-ng -V")" \
+      || fail "installed binary does not run in the dbld image: $BIN"
+  else
+    ver="$("$BIN" -V)" || fail "installed binary does not run: $BIN"
+  fi
   printf '%s\n' "${ver%%$'\n'*}"
 fi
 say "done ($MODE)"
