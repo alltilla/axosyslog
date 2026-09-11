@@ -19,6 +19,10 @@ BUILDER_IMAGES=		\
 	tarball
 
 IMAGES=${BUILDER_IMAGES} devshell
+# published for amd64 and arm64 so the devshell can be pulled on arm64 hosts too;
+# the packaging images stay amd64-only
+MULTIARCH_IMAGES=debian-testing tarball devshell
+IMAGE_ARCH ?=
 DEFAULT_IMAGE ?= ubuntu-resolute
 TARBALL_IMAGE ?= tarball
 DEFAULT_DEB_IMAGE=ubuntu-resolute
@@ -236,9 +240,18 @@ image-%:
         $(DOCKER) build $(DOCKER_BUILD_ARGS) --build-arg=ARG_IMAGE_PLATFORM=$* --build-arg=COMMIT=$$($(GIT) rev-parse --short HEAD || echo "") --build-arg=CONTAINER_REGISTRY=${CONTAINER_REGISTRY} --network=host -t ${CONTAINER_REGISTRY}/axosyslog-dbld-$* -f $(DBLD_DIR)/images/$*.dockerfile $(DBLD_DIR)
 
 push-images: $(foreach image,$(IMAGES), push-image-$(image))
+# CI builds every architecture on its own runner and pushes an architecture tag
+# (IMAGE_ARCH=amd64|arm64); merge-image-% then combines those tags into the
+# :latest manifest list that the FROM lines and pull-image-% resolve
 push-image-%:
-	@echo "Pushing image: $*"
-	$(DOCKER) push ${CONTAINER_REGISTRY}/axosyslog-dbld-$*
+	@echo "Pushing image: $*$(if $(IMAGE_ARCH), ($(IMAGE_ARCH)))"
+	$(if $(IMAGE_ARCH),$(DOCKER) tag ${CONTAINER_REGISTRY}/axosyslog-dbld-$* ${CONTAINER_REGISTRY}/axosyslog-dbld-$*:$(IMAGE_ARCH))
+	$(DOCKER) push ${CONTAINER_REGISTRY}/axosyslog-dbld-$*$(if $(IMAGE_ARCH),:$(IMAGE_ARCH))
+
+merge-images: $(foreach image,$(IMAGES), merge-image-$(image))
+merge-image-%:
+	$(DOCKER) buildx imagetools create -t ${CONTAINER_REGISTRY}/axosyslog-dbld-$* \
+		$(foreach arch,$(if $(filter $*,$(MULTIARCH_IMAGES)),amd64 arm64,amd64),${CONTAINER_REGISTRY}/axosyslog-dbld-$*:$(arch))
 
 pull-images: $(foreach image,$(BUILDER_IMAGES), pull-image-$(image))
 pull-image: pull-image-$(DEFAULT_IMAGE)
