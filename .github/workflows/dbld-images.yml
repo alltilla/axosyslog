@@ -86,7 +86,6 @@ jobs:
           - debian-bullseye
           - debian-bookworm
           - debian-sid
-          - debian-testing
           - debian-trixie
           - ubuntu-focal
           - ubuntu-jammy
@@ -94,8 +93,11 @@ jobs:
           - ubuntu-plucky
           - ubuntu-questing
           - ubuntu-resolute
-          - devshell
-          - tarball
+        include:
+          # image-devshell builds debian-testing and tarball first, so every layer of
+          # the chain bases on the image built in this job, not on the registry's
+          # previous :latest
+          - image: devshell
       fail-fast: false
     steps:
       - name: Checkout source code
@@ -121,4 +123,10 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
         run: |
-          dbld/rules push-image-${IMAGE}
+          case "${IMAGE}" in
+            devshell) images="debian-testing tarball devshell" ;;
+            *) images="${IMAGE}" ;;
+          esac
+          for image in ${images}; do
+            dbld/rules "push-image-${image}"
+          done
