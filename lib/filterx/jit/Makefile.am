@@ -31,11 +31,17 @@ filterx_bitcode_compile = \
 $(filterx_bitcode_units): %.bc: %.c
 	$(AM_V_GEN)$(filterx_bitcode_compile) -c $< -o $@
 
-lib/filterx/jit/libfilterx.bc: $(filterx_bitcode_units)
+lib/filterx/jit/libfilterx-linked.bc: $(filterx_bitcode_units)
 	$(AM_V_GEN)$(LLVM_LINK) -o $@ $^
+
+# The pre-link pipeline keeps every function body, so the JIT can still
+# inline the helpers into the blocks it links this module into.
+lib/filterx/jit/libfilterx.bc: lib/filterx/jit/libfilterx-linked.bc
+	$(AM_V_GEN)$(LLVM_OPT) -passes='thinlto-pre-link<O3>' -o $@ $<
 
 CLEANFILES += \
 	$(filterx_bitcode_units) \
+	lib/filterx/jit/libfilterx-linked.bc \
 	lib/filterx/jit/libfilterx.bc
 
 endif

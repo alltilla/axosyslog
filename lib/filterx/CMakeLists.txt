@@ -238,6 +238,7 @@ set(FILTERX_BITCODE_SOURCES
 if(SYSLOG_NG_ENABLE_JIT)
   find_program(LLVM_CLANG clang HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
   find_program(LLVM_LINK llvm-link HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
+  find_program(LLVM_OPT opt HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
 
   set(FILTERX_BITCODE_UNITS "")
   foreach(_src IN LISTS FILTERX_BITCODE_SOURCES)
@@ -258,9 +259,18 @@ if(SYSLOG_NG_ENABLE_JIT)
   endforeach()
 
   add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx.bc"
-    COMMAND ${LLVM_LINK} -o "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx.bc" ${FILTERX_BITCODE_UNITS}
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx-linked.bc"
+    COMMAND ${LLVM_LINK} -o "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx-linked.bc" ${FILTERX_BITCODE_UNITS}
     DEPENDS ${FILTERX_BITCODE_UNITS}
+    VERBATIM)
+  # The pre-link pipeline keeps every function body, so the JIT can still
+  # inline the helpers into the blocks it links this module into.
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx.bc"
+    COMMAND ${LLVM_OPT} "-passes=thinlto-pre-link<O3>"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx.bc"
+            "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx-linked.bc"
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx-linked.bc"
     VERBATIM)
   add_custom_target(filterx-bitcode
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/jit/libfilterx.bc")
