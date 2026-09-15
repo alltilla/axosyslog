@@ -31,6 +31,8 @@
 #include <llvm-c/Types.h>
 
 LLVMModuleRef filterx_jit_load_libfilterx_bitcode(LLVMContextRef ctx, GError **error);
+LLVMMemoryBufferRef filterx_jit_libfilterx_bitcode_buffer(GError **error);
+void filterx_jit_libfilterx_mark_symbols(LLVMContextRef ctx, LLVMModuleRef mod);
 
 #endif
 

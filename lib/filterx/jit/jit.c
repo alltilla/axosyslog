@@ -106,16 +106,6 @@ _assert_verify_block(FilterXJIT *self, FilterXIRValue block)
   LLVMVerifyFunction(block, LLVMAbortProcessAction);
 }
 
-static LLVMErrorRef
-_run_passes(FilterXJIT *self, LLVMModuleRef mod, const gchar *passes)
-{
-  LLVMPassBuilderOptionsRef options = LLVMCreatePassBuilderOptions();
-  LLVMErrorRef err = LLVMRunPasses(mod, passes, self->tm, options);
-
-  LLVMDisposePassBuilderOptions(options);
-  return err;
-}
-
 /*
  * The pass pipeline of the block buckets, resolved once because the buckets run on a thread pool.
  *
@@ -133,38 +123,6 @@ _resolve_block_passes(FilterXJIT *self)
 
   const gchar *pass_override = g_getenv("SYSLOG_NG_FILTERX_JIT_PASSES");
   return g_strdup(pass_override ? : "default<O3>");
-}
-
-/*
- * Optimize libfilterx once, before _link_bucket_module() clones it into every bucket module.
- *
- * The pipeline must be a pre-link one. "default<O3>" ends with EliminateAvailableExternallyPass,
- * which deletes the body of every symbol that bc-loader.c marked "available_externally". The
- * buckets would then link against bare declarations and no runtime helper could be inlined into
- * a block. The ThinLTO pre-link pipeline keeps those bodies for link-time inlining, which is
- * exactly what the block pass run in _compile_module_to_object() then does.
- *
- * For the same reason the SYSLOG_NG_FILTERX_JIT_PASSES override must not reach this module.
- */
-#define FILTERX_JIT_LIBFILTERX_PASSES "thinlto-pre-link<O3>"
-
-static gboolean
-_preoptimize_libfilterx(FilterXJIT *self, GError **error)
-{
-  if (!self->libfilterx)
-    return TRUE;
-
-  msg_trace("FilterXJIT pre-optimize libfilterx",
-            evt_tag_str("module_name", self->mod_name),
-            evt_tag_str("passes", FILTERX_JIT_LIBFILTERX_PASSES));
-
-  LLVMErrorRef err = _run_passes(self, self->libfilterx, FILTERX_JIT_LIBFILTERX_PASSES);
-  if (err)
-    {
-      _llvm_error_to_fxjit_error(err, error);
-      return FALSE;
-    }
-  return TRUE;
 }
 
 FilterXIRBuilder
@@ -680,6 +638,8 @@ _link_bucket_module(FilterXJIT *self, LLVMContextRef ctx, guint bucket, guint nb
   if (!mod)
     return NULL;
 
+  filterx_jit_libfilterx_mark_symbols(ctx, mod);
+
   LLVMValueRef tmpl = LLVMGetNamedFunction(mod, "fx_jit_attribute_template");
   if (tmpl && !LLVMIsDeclaration(tmpl))
     LLVMSetLinkage(tmpl, LLVMInternalLinkage);
@@ -1071,10 +1031,9 @@ filterx_jit_new(const gchar *module_name, FilterXJITDebugInfo debug_info, GError
 
   self->compile.block_passes = _resolve_block_passes(self);
 
-  if (!_preoptimize_libfilterx(self, error))
+  self->compile.libfilterx_bc = filterx_jit_libfilterx_bitcode_buffer(error);
+  if (!self->compile.libfilterx_bc)
     goto error;
-
-  self->compile.libfilterx_bc = LLVMWriteBitcodeToMemoryBuffer(self->libfilterx);
 
   /* the FFI is declared per block module in filterx_jit_ir_add_new_block */
 

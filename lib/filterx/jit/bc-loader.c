@@ -63,8 +63,8 @@ _mark_function_inline(LLVMContextRef ctx, LLVMValueRef fn)
   LLVMAddAttributeAtIndex(fn, LLVMAttributeFunctionIndex, inline_attr);
 }
 
-static void
-_modify_symbols(LLVMContextRef ctx, LLVMModuleRef mod)
+void
+filterx_jit_libfilterx_mark_symbols(LLVMContextRef ctx, LLVMModuleRef mod)
 {
   for (LLVMValueRef fn = LLVMGetFirstFunction(mod); fn; fn = LLVMGetNextFunction(fn))
     {
@@ -80,8 +80,9 @@ _modify_symbols(LLVMContextRef ctx, LLVMModuleRef mod)
     _mark_symbol_available_externally(g);
 }
 
-LLVMModuleRef
-filterx_jit_load_libfilterx_bitcode(LLVMContextRef ctx, GError **error)
+/* a view of the embedded bitcode, disposing it does not touch the binary's data */
+LLVMMemoryBufferRef
+filterx_jit_libfilterx_bitcode_buffer(GError **error)
 {
   GQuark fx_jit_error = g_quark_from_static_string("filterx-jit");
   if (!_binary_lib_filterx_jit_libfilterx_bc_start || !_binary_lib_filterx_jit_libfilterx_bc_end)
@@ -93,8 +94,17 @@ filterx_jit_load_libfilterx_bitcode(LLVMContextRef ctx, GError **error)
 
   gsize bc_size = (gsize) (_binary_lib_filterx_jit_libfilterx_bc_end - _binary_lib_filterx_jit_libfilterx_bc_start);
 
-  LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRange(_binary_lib_filterx_jit_libfilterx_bc_start, bc_size,
-                            "libfilterx.bc", FALSE);
+  return LLVMCreateMemoryBufferWithMemoryRange(_binary_lib_filterx_jit_libfilterx_bc_start, bc_size,
+                                               "libfilterx.bc", FALSE);
+}
+
+LLVMModuleRef
+filterx_jit_load_libfilterx_bitcode(LLVMContextRef ctx, GError **error)
+{
+  GQuark fx_jit_error = g_quark_from_static_string("filterx-jit");
+  LLVMMemoryBufferRef buf = filterx_jit_libfilterx_bitcode_buffer(error);
+  if (!buf)
+    return NULL;
 
   LLVMModuleRef mod = NULL;
   LLVMBool err = LLVMParseBitcodeInContext2(ctx, buf, &mod);
@@ -106,7 +116,7 @@ filterx_jit_load_libfilterx_bitcode(LLVMContextRef ctx, GError **error)
       return NULL;
     }
 
-  _modify_symbols(ctx, mod);
+  filterx_jit_libfilterx_mark_symbols(ctx, mod);
   return mod;
 }
 
