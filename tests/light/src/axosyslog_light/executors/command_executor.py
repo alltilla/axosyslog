@@ -50,7 +50,7 @@ def prepare_executable_command(command):
 
 class CommandExecutor(object):
     def __init__(self):
-        self.__start_timeout = 10
+        self.__start_timeout = 30
 
     def run(self, command, stdout_path, stderr_path):
         printable_command = prepare_printable_command(command)

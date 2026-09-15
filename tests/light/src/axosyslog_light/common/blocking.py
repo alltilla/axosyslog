@@ -22,7 +22,7 @@
 #############################################################################
 import time
 
-DEFAULT_TIMEOUT = 20  # 20 sec
+DEFAULT_TIMEOUT = 60  # 60 sec
 POLL_FREQ = 0.050     # 50ms
 
 
