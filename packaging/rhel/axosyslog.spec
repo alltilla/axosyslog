@@ -486,6 +486,7 @@ fi
 %{_bindir}/dqtool
 %{_bindir}/update-patterndb
 %{_bindir}/persist-tool
+%{_bindir}/fxtool
 %{_libdir}/libsyslog-ng-*.so.*
 %{_libdir}/libsecret-storage.so.*
 %{_libdir}/libloggen_helper-*.so.*
