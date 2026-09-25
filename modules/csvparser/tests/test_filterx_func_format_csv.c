@@ -257,6 +257,52 @@ Test(filterx_func_format_csv, test_dict_mode_default_value_repr_must_be_string)
 }
 
 
+Test(filterx_func_format_csv, test_invalid_dialect)
+{
+  GList *args = NULL;
+  args = g_list_append(args, filterx_function_arg_new(NULL, filterx_literal_new(filterx_test_dict_new())));
+  args = g_list_append(args, filterx_function_arg_new(FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT,
+                                                      filterx_literal_new(filterx_string_new("escape-none", -1))));
+  _assert_format_csv_init_fail(args);
+  args = NULL;
+
+  args = g_list_append(args, filterx_function_arg_new(NULL, filterx_literal_new(filterx_test_dict_new())));
+  args = g_list_append(args, filterx_function_arg_new(FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT,
+                                                      filterx_literal_new(filterx_string_new("rfc4180", -1))));
+  _assert_format_csv_init_fail(args);
+  args = NULL;
+
+  args = g_list_append(args, filterx_function_arg_new(NULL, filterx_literal_new(filterx_test_dict_new())));
+  args = g_list_append(args, filterx_function_arg_new(FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT,
+                                                      filterx_object_expr_new(filterx_string_new("escape-double-char", -1))));
+  _assert_format_csv_init_fail(args);
+}
+
+Test(filterx_func_format_csv, test_dialect_escape_backslash_with_sequences)
+{
+  FilterXExpr *csv_data = filterx_literal_new(
+                            filterx_object_from_json("[\"say \\\"hi\\\"\", \"a,\\\"b\\\"\\n\"]", -1, NULL));
+  GList *args = NULL;
+  args = g_list_append(args, filterx_function_arg_new(NULL, csv_data));
+  args = g_list_append(args, filterx_function_arg_new(FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT,
+                                                      filterx_literal_new(filterx_string_new("escape-backslash-with-sequences", -1))));
+
+  _assert_format_csv(args, "say \"hi\",\"a,\\\"b\\\"\\n\"");
+}
+
+Test(filterx_func_format_csv, test_dialect_escape_double_char)
+{
+  FilterXExpr *csv_data = filterx_literal_new(
+                            filterx_object_from_json("[\"plain\", \"has,comma\", \"say \\\"hi\\\"\", \"line1\\nline2\", "
+                                                     "\"a\\rb\", \"back\\\\slash\"]", -1, NULL));
+  GList *args = NULL;
+  args = g_list_append(args, filterx_function_arg_new(NULL, csv_data));
+  args = g_list_append(args, filterx_function_arg_new(FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT,
+                                                      filterx_literal_new(filterx_string_new("escape-double-char", -1))));
+
+  _assert_format_csv(args, "plain,\"has,comma\",\"say \"\"hi\"\"\",\"line1\nline2\",\"a\rb\",back\\slash");
+}
+
 static void
 setup(void)
 {

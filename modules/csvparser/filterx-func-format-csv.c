@@ -21,6 +21,7 @@
  */
 
 #include "filterx-func-format-csv.h"
+#include "csvparser.h"
 #include "filterx/expr-literal.h"
 #include "filterx/object-string.h"
 #include "filterx/object-null.h"
@@ -35,7 +36,8 @@
 #define FILTERX_FUNC_FORMAT_CSV_USAGE "Usage: format_csv({list or dict}, [" \
   FILTERX_FUNC_FORMAT_CSV_ARG_NAME_COLUMNS"={list}," \
   FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DELIMITER"={string literal}," \
-  FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DEFAULT_VALUE"={string literal}])"
+  FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DEFAULT_VALUE"={string literal}," \
+  FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT"={string literal}])"
 
 typedef struct FilterXFunctionFormatCSV_
 {
@@ -44,19 +46,38 @@ typedef struct FilterXFunctionFormatCSV_
   gchar delimiter;
   FilterXExpr *columns;
   FilterXObject *default_value;
+  CSVScannerDialect dialect;
 } FilterXFunctionFormatCSV;
 
 static gboolean
 _value_needs_quotes(FilterXFunctionFormatCSV *self, const gchar *value, gsize len)
 {
-  return memchr(value, self->delimiter, len) != NULL;
+  if (memchr(value, self->delimiter, len))
+    return TRUE;
+
+  if (self->dialect != CSV_SCANNER_ESCAPE_DOUBLE_CHAR)
+    return FALSE;
+
+  return memchr(value, '"', len) || memchr(value, '\r', len) || memchr(value, '\n', len);
 }
 
 static void
 _append_quoted_value(FilterXFunctionFormatCSV *self, GString *buffer, const gchar *value, gsize len)
 {
   g_string_append_c(buffer, '"');
-  append_unsafe_utf8_as_escaped_binary(buffer, value, len, AUTF8_UNSAFE_QUOTE);
+
+  if (self->dialect == CSV_SCANNER_ESCAPE_DOUBLE_CHAR)
+    {
+      for (gsize i = 0; i < len; i++)
+        {
+          if (value[i] == '"')
+            g_string_append_c(buffer, '"');
+          g_string_append_c(buffer, value[i]);
+        }
+    }
+  else
+    append_unsafe_utf8_as_escaped_binary(buffer, value, len, AUTF8_UNSAFE_QUOTE);
+
   g_string_append_c(buffer, '"');
 }
 
@@ -252,6 +273,37 @@ _extract_default_value_arg(FilterXFunctionFormatCSV *self, FilterXFunctionArgs *
 }
 
 static gboolean
+_extract_dialect_arg(FilterXFunctionFormatCSV *self, FilterXFunctionArgs *args, GError **error)
+{
+  gboolean exists;
+  gsize dialect_len;
+  const gchar *dialect = filterx_function_args_get_named_literal_string(args,
+                         FILTERX_FUNC_FORMAT_CSV_ARG_NAME_DIALECT,
+                         &dialect_len, &exists);
+  if (!exists)
+    return TRUE;
+
+  if (!dialect)
+    {
+      g_set_error(error, FILTERX_FUNCTION_ERROR, FILTERX_FUNCTION_ERROR_CTOR_FAIL,
+                  "dialect must be a string literal. " FILTERX_FUNC_FORMAT_CSV_USAGE);
+      return FALSE;
+    }
+
+  gint lookup = csv_parser_lookup_dialect(dialect);
+  if (lookup != CSV_SCANNER_ESCAPE_BACKSLASH_WITH_SEQUENCES && lookup != CSV_SCANNER_ESCAPE_DOUBLE_CHAR)
+    {
+      g_set_error(error, FILTERX_FUNCTION_ERROR, FILTERX_FUNCTION_ERROR_CTOR_FAIL,
+                  "dialect must be one of: [escape-backslash-with-sequences, escape-double-char]. "
+                  FILTERX_FUNC_FORMAT_CSV_USAGE);
+      return FALSE;
+    }
+
+  self->dialect = lookup;
+  return TRUE;
+}
+
+static gboolean
 _extract_arguments(FilterXFunctionFormatCSV *self, FilterXFunctionArgs *args, GError **error)
 {
   gsize args_len = filterx_function_args_len(args);
@@ -274,6 +326,9 @@ _extract_arguments(FilterXFunctionFormatCSV *self, FilterXFunctionArgs *args, GE
     return FALSE;
 
   if (!_extract_default_value_arg(self, args, error))
+    return FALSE;
+
+  if (!_extract_dialect_arg(self, args, error))
     return FALSE;
 
   self->columns = _extract_columns_expr(args, error);
@@ -309,6 +364,7 @@ filterx_function_format_csv_new(FilterXFunctionArgs *args, GError **error)
   self->super.super.free_fn = _free;
   self->delimiter = ',';
   self->default_value = filterx_string_new("", -1);
+  self->dialect = CSV_SCANNER_ESCAPE_BACKSLASH_WITH_SEQUENCES;
 
   if (!_extract_arguments(self, args, error) ||
       !filterx_function_args_check(args, error))
