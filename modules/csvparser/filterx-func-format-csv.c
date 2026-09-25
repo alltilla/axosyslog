@@ -47,6 +47,20 @@ typedef struct FilterXFunctionFormatCSV_
 } FilterXFunctionFormatCSV;
 
 static gboolean
+_value_needs_quotes(FilterXFunctionFormatCSV *self, const gchar *value, gsize len)
+{
+  return memchr(value, self->delimiter, len) != NULL;
+}
+
+static void
+_append_quoted_value(FilterXFunctionFormatCSV *self, GString *buffer, const gchar *value, gsize len)
+{
+  g_string_append_c(buffer, '"');
+  append_unsafe_utf8_as_escaped_binary(buffer, value, len, AUTF8_UNSAFE_QUOTE);
+  g_string_append_c(buffer, '"');
+}
+
+static gboolean
 _append_to_buffer(FilterXObject *key, FilterXObject *value, gpointer user_data)
 {
   FilterXFunctionFormatCSV *self = ((gpointer *) user_data)[0];
@@ -67,16 +81,14 @@ _append_to_buffer(FilterXObject *key, FilterXObject *value, gpointer user_data)
     }
 
   /* TODO: make the characters here configurable. */
-  if (memchr(buffer->str + len_before_value, self->delimiter, buffer->len - len_before_value) != NULL)
+  if (_value_needs_quotes(self, buffer->str + len_before_value, buffer->len - len_before_value))
     {
       ScratchBuffersMarker marker;
       GString *value_buffer = scratch_buffers_alloc_and_mark(&marker);
 
       g_string_assign_len(value_buffer, buffer->str + len_before_value, buffer->len - len_before_value);
       g_string_truncate(buffer, len_before_value);
-      g_string_append_c(buffer, '"');
-      append_unsafe_utf8_as_escaped_binary(buffer, value_buffer->str, value_buffer->len, AUTF8_UNSAFE_QUOTE);
-      g_string_append_c(buffer, '"');
+      _append_quoted_value(self, buffer, value_buffer->str, value_buffer->len);
 
       scratch_buffers_reclaim_marked(marker);
     }
