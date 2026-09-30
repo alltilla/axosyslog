@@ -947,6 +947,14 @@ _should_initiate_flush(HTTPDestinationWorker *self)
 
 }
 
+static gboolean
+_is_batch_bytes_exceeded(HTTPDestinationWorker *self)
+{
+  HTTPDestinationDriver *owner = (HTTPDestinationDriver *) self->super.owner;
+
+  return (owner->batch_bytes && self->request_body->len + owner->body_suffix->len > owner->batch_bytes);
+}
+
 static LogThreadedResult
 _insert_batched(LogThreadedDestWorker *s, LogMessage *msg)
 {
@@ -957,6 +965,15 @@ _insert_batched(LogThreadedDestWorker *s, LogMessage *msg)
 
   gsize orig_msg_len = self->request_body->len;
   _add_message_to_batch(self, msg);
+
+  /* The batch is sent without this message, which goes back to the queue to start the next batch. */
+  if (self->super.batch_size > 1 && _is_batch_bytes_exceeded(self))
+    {
+      g_string_truncate(self->request_body, orig_msg_len);
+      log_threaded_dest_worker_rewind_messages(&self->super, 1);
+      return log_threaded_dest_worker_flush(&self->super, LTF_FLUSH_NORMAL);
+    }
+
   gsize diff_msg_len = self->request_body->len - orig_msg_len;
   log_threaded_dest_driver_insert_msg_length_stats(self->super.owner, diff_msg_len);
 

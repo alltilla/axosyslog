@@ -163,3 +163,29 @@ Test(test_http_signal_slot, batch_with_prefix_suffix)
 
   wait_for_signal_slot_to_finish();
 }
+
+Test(test_http_signal_slot, batch_bytes_is_not_exceeded_by_the_next_message)
+{
+  LogTemplate *prefix = log_template_new(configuration, NULL);
+  cr_assert(log_template_compile(prefix, "[", NULL));
+  http_dd_set_body_prefix((LogDriver *)driver, prefix);
+  log_template_unref(prefix);
+
+  http_dd_set_body_suffix((LogDriver *)driver, "]");
+  http_dd_set_delimiter((LogDriver *)driver, ",");
+  http_dd_set_batch_bytes((LogDriver *)driver, 8);
+  log_threaded_dest_driver_set_batch_timeout((LogDriver *)driver, 1000);
+
+  SignalSlotConnector *ssc = driver->super.super.super.signal_slot_connector;
+
+  CONNECT(ssc, signal_http_request, _check, "[aa,bb]");
+
+  cr_assert(log_pipe_init((LogPipe *)driver));
+  cr_assert(log_pipe_post_config_init((LogPipe *)driver));
+
+  _generate_message(driver, "aa");
+  _generate_message(driver, "bb");
+  _generate_message(driver, "cc");
+
+  wait_for_signal_slot_to_finish();
+}
