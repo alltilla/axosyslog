@@ -21,7 +21,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__
 DENY_MSG = (
     "Blocked by axosyslog-build-gate: use `axosyslog-build [mode] [--sanitizer=...] "
     "[--clean] [-j N] [--check] [--light]` instead of raw build/test/install commands "
-    "in the AxoSyslog tree (see CLAUDE.md). Modes: cmake (default)|autotools|dbld|alpine. "
+    "in the AxoSyslog tree (see CLAUDE.md). Modes: cmake (default)|autotools|dbld (default on macOS)|alpine. "
     "Need a flavor axosyslog-build lacks? Add it to axosyslog-build on purpose -- do not "
     "improvise configure flags or partial builds."
 )
