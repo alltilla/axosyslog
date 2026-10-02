@@ -15,6 +15,8 @@ axosyslog-build --light    # ... then the light/e2e suite
 axosyslog-build autotools  # release/packaging build instead
 ```
 
+On macOS the default mode is `dbld`, the containerized build.
+
 - **Run the installed binary** `build/install/sbin/syslog-ng`, never the
   build-tree `build/syslog-ng/syslog-ng` — the latter misses runtime libraries
   and does not match how syslog-ng really executes (module path, persist/control
