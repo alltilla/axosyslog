@@ -19,6 +19,7 @@
 #   The default is cmake with the full development stack: clang, lld, ninja,
 #   the filterx LLVM JIT, and the AddressSanitizer. Missing tooling for the
 #   selected setup fails early with an install hint (native modes only).
+#   On macOS the default is dbld.
 #
 #   flavors: --sanitizer=address|thread|undefined|none
 #                                  default: address (dbld: none; alpine: fixed
@@ -114,8 +115,15 @@ default_jobs() {
   if [ "$n" -gt 2 ]; then echo $((n - 2)); else echo 1; fi
 }
 
+default_mode() {
+  case "$(uname -s)" in
+    Darwin) echo dbld ;;
+    *)      echo cmake ;;
+  esac
+}
+
 case "${1:-}" in
-  ""|-*)     MODE=cmake ;;   # a leading flag (incl. -h) keeps the default and falls into the loop
+  ""|-*)     MODE="$(default_mode)" ;;   # a leading flag (incl. -h) keeps the default and falls into the loop
   *)         MODE="$1"; shift ;;
 esac
 
