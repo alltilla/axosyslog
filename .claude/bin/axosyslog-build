@@ -249,6 +249,15 @@ if [ "$MODE" != alpine ] && [ "$existing" != none ] && [ "$existing" != "$MODE" 
   fail "this tree is set up for '$existing'; building '$MODE' on top of it would corrupt lib/ivykis. Re-run with --clean to switch (it wipes build/ and recovers lib/ivykis)."
 fi
 
+# --- host quirks --------------------------------------------------------------
+# macOS ships no standalone libunwind, so the stackdump feature cannot build there.
+# Homebrew keeps bison keg-only, and Apple's bison 2.3 predates the 3.7.6 minimum.
+STACKDUMP=ON
+if [ "$(uname -s)" = Darwin ]; then
+  STACKDUMP=OFF
+  brew_prefix="$(brew --prefix 2>/dev/null)" && PATH="$brew_prefix/opt/bison/bin:$PATH"
+fi
+
 # --- fail early on missing tooling (host builds only) -----------------------
 # dbld/alpine build inside a container image that already carries the toolchain.
 require_tools() {
@@ -338,6 +347,7 @@ build_autotools() {
   [ "$SANITIZER" != none ] && extra+=(--with-sanitizer="$SANITIZER")
   [ "$MONOLITHIC" -eq 1 ] && extra+=(--with-linking-mode=monolithic)
   [ "$NO_JIT" -eq 1 ] && extra+=(--disable-jit)
+  [ "$STACKDUMP" = ON ] && extra+=(--enable-stackdump)
 
   if [ "$CLEAN" -eq 1 ]; then
     say "clean: wiping ${BUILD#"$ROOT"/}/"
@@ -358,7 +368,7 @@ build_autotools() {
         CC="$CC" CXX="$CXX" \
         "${extra[@]}" \
         --enable-debug --enable-extra-warnings --enable-all-modules \
-        --disable-java --disable-java-modules --enable-stackdump \
+        --disable-java --disable-java-modules \
         --prefix="$prefix" )
   else
     warn "reusing existing build/config.status (run --clean to change flavors)"
@@ -408,7 +418,7 @@ build_cmake() {
       "${jitflag[@]}" \
       "${lldflag[@]}" \
       -DCMAKE_BUILD_TYPE=Debug -DENABLE_EXTRA_WARNINGS=ON \
-      -DENABLE_JAVA=OFF -DENABLE_JAVA_MODULES=OFF -DENABLE_LIBUNWIND=ON \
+      -DENABLE_JAVA=OFF -DENABLE_JAVA_MODULES=OFF -DENABLE_LIBUNWIND="$STACKDUMP" \
       -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
       -DCMAKE_INSTALL_PREFIX="$prefix"
   else
