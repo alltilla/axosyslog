@@ -16,20 +16,29 @@ set(CMAKE_REQUIRED_INCLUDES ${RDKAFKA_INCLUDE_DIR})
 set(CMAKE_REQUIRED_LIBRARIES ${RDKAFKA_LIBRARY})
 
 check_symbol_exists(rd_kafka_init_transactions "librdkafka/rdkafka.h" SYSLOG_NG_HAVE_RD_KAFKA_INIT_TRANSACTIONS)
+check_symbol_exists(rd_kafka_seek_partitions "librdkafka/rdkafka.h" SYSLOG_NG_HAVE_RD_KAFKA_SEEK_PARTITIONS)
+check_symbol_exists(rd_kafka_queue_yield "librdkafka/rdkafka.h" SYSLOG_NG_HAVE_RD_KAFKA_QUEUE_YIELD)
 
 set(KAFKA_SOURCES
   kafka-parser.c
   kafka-parser.h
-  kafka-plugin.c
   kafka-dest-driver.h
   kafka-dest-driver.c
   kafka-dest-worker.h
   kafka-dest-worker.c
+  kafka-source-driver.h
+  kafka-source-driver.c
+  kafka-source-worker.h
+  kafka-source-worker.c
+  kafka-source-persist.h
+  kafka-source-persist.c
+  kafka-props.h
   kafka-props.c
   kafka-internal.h
   kafka-internal.c
   kafka-topic-parts.h
   kafka-topic-parts.c
+  kafka-plugin.c
 )
 
 add_module(
@@ -40,4 +49,3 @@ add_module(
 )
 
 add_test_subdirectory(tests)
-
