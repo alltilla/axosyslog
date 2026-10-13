@@ -22,6 +22,7 @@
 #
 #############################################################################
 import datetime
+import time
 import uuid
 
 import pyarrow as pa
@@ -560,3 +561,30 @@ def test_arrow_flight_destination_response_action_success(config, syslog_ng, por
     assert wait_until_true(lambda: arrow_flight_destination.get_stats().get("written", 0) == num_messages)
     assert arrow_flight_destination.get_stats()["dropped"] == 0
     assert arrow_flight_destination.get_row_count(ARROW_FLIGHT_PATH) == 0
+
+
+def test_arrow_flight_destination_idle_reconnect(config, syslog_ng, port_allocator):
+    idle_reconnect_timeout = 1
+    file_source = config.create_file_source(file_name="input.log", flags="no-parse")
+
+    options = {
+        **ARROW_FLIGHT_OPTIONS,
+        "batch-lines": 1,
+        "idle-reconnect-timeout": idle_reconnect_timeout,
+    }
+    arrow_flight_destination = config.create_arrow_flight_destination(port=port_allocator(), **options)
+    config.create_logpath(statements=[file_source, arrow_flight_destination])
+
+    arrow_flight_destination.start_listener()
+    syslog_ng.start(config)
+
+    file_source.write_log("first")
+    assert wait_until_true(lambda: arrow_flight_destination.get_stats().get("written", 0) == 1)
+
+    time.sleep(2 * idle_reconnect_timeout)
+
+    file_source.write_log("second")
+    assert wait_until_true(lambda: arrow_flight_destination.get_stats().get("written", 0) == 2)
+    assert arrow_flight_destination.get_stats()["dropped"] == 0
+    assert arrow_flight_destination.get_row_count(ARROW_FLIGHT_PATH) == 2
+    assert arrow_flight_destination.get_stream_count(ARROW_FLIGHT_PATH) == 2
