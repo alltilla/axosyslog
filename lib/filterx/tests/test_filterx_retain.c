@@ -1036,12 +1036,47 @@ Test(filterx_retain, snapshot_skips_message_tied_variables_that_are_in_sync_with
   cr_assert_not_null(dv);
   assert_object_str_equals(filterx_variable_borrow_value(dv), "assigned-in-scope");
 
+  cr_assert_not(filterx_variable_is_assigned(dv));
+  cr_assert_str_eq(log_msg_get_value_by_name(dup->scope->msg, "snapwrite", NULL), "assigned-in-scope");
+  cr_assert_str_eq(log_msg_get_value_by_name(msg, "snapwrite", NULL), "to-be-overwritten");
+
   cr_assert_null(filterx_scope_lookup_variable(dup->scope, read_handle, 0));
   dv = filterx_scope_register_variable(dup->scope, FX_VAR_MESSAGE_TIED, read_handle, 0);
   assert_object_str_equals(filterx_variable_borrow_value(dv), "from-the-message");
 
   filterx_eval_context_free_dup(dup);
   filterx_scope_variable_layout_free(layout);
+}
+
+Test(filterx_retain, snapshot_syncs_an_assignment_of_an_earlier_block_into_its_message)
+{
+  LogMessage *msg = filterx_eval_get_context()->msg;
+  log_msg_set_value_by_name_with_type(msg, "snapearlier", "to-be-overwritten", -1, LM_VT_STRING);
+
+  /* filterx pipes chain their scopes, so the scope of the earlier block is
+   * not synced before the next block runs */
+  FilterXVariableHandle handle = filterx_map_varname_to_handle("snapearlier", FX_VAR_MESSAGE_TIED);
+  FilterXScopeVariableLayout *earlier_layout = filterx_scope_variable_layout_new_from_handles(&handle, 1);
+  FilterXScope *earlier_scope = filterx_scope_new(NULL, earlier_layout);
+  filterx_scope_set_message(earlier_scope, msg);
+  FilterXVariable *v = filterx_scope_register_variable(earlier_scope, FX_VAR_MESSAGE_TIED, handle, 0);
+  FilterXObject *new_value = filterx_string_new("assigned-in-an-earlier-block", -1);
+  filterx_scope_set_variable(earlier_scope, v, &new_value, TRUE);
+  filterx_object_unref(new_value);
+
+  FilterXScopeVariableLayout *layout = filterx_scope_variable_layout_new_from_handles(NULL, 0);
+  set_libtest_filterx_scope(filterx_scope_new(earlier_scope, layout));
+
+  FilterXEvalContext *dup = filterx_eval_context_dup(filterx_eval_get_context());
+
+  cr_assert_str_eq(log_msg_get_value_by_name(dup->scope->msg, "snapearlier", NULL), "assigned-in-an-earlier-block");
+  cr_assert_str_eq(log_msg_get_value_by_name(msg, "snapearlier", NULL), "to-be-overwritten");
+
+  filterx_eval_context_free_dup(dup);
+  set_libtest_filterx_scope(filterx_scope_new(NULL, NULL));
+  filterx_scope_free(earlier_scope);
+  filterx_scope_variable_layout_free(layout);
+  filterx_scope_variable_layout_free(earlier_layout);
 }
 
 static void

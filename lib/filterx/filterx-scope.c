@@ -549,6 +549,9 @@ _layout_from_snapshot_handles(GArray *snapshots)
   return layout;
 }
 
+/* An assignment to a message-tied variable reaches the message at the next
+ * syncing pipe, which the duplicate never passes.  So both scopes are
+ * synced here, into the duplicate's own clone of the message. */
 FilterXScope *
 filterx_scope_dup(FilterXScope *self, FilterXScopeValueSnapshotFunc snapshot_value, gpointer user_data)
 {
@@ -590,15 +593,17 @@ filterx_scope_dup(FilterXScope *self, FilterXScopeValueSnapshotFunc snapshot_val
         {
           FilterXScopeVariableLayout *ancestor_layout = _layout_from_snapshot_handles(ancestor_collector.snapshots);
           ancestor_scope = _dup_scope_from_snapshots(NULL, msg, ancestor_layout, ancestor_collector.snapshots);
+          filterx_scope_set_dirty(ancestor_scope);
         }
       g_array_free(ancestor_collector.snapshots, TRUE);
     }
 
   FilterXScopeVariableLayout *own_layout = _layout_copy(self->layout);
   FilterXScope *new_scope = _dup_scope_from_snapshots(ancestor_scope, msg, own_layout, own_collector.snapshots);
-  /* whatever @self has: a sync of the duplicate has to write its values */
-  new_scope->dirty = TRUE;
+  filterx_scope_set_dirty(new_scope);
   g_array_free(own_collector.snapshots, TRUE);
+
+  filterx_scope_sync(new_scope, &msg, &path_options);
   log_msg_unref(msg);
 
   return new_scope;
