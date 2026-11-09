@@ -455,7 +455,8 @@ _collect_variable_for_dup(FilterXVariable *variable, gpointer user_data)
   /* The snapshot keeps a reference on the message, and a read through the
    * duplicate pulls the value from there again
    * (filterx_scope_register_variable()).  The same condition
-   * filterx_scope_sync() uses to skip a variable. */
+   * filterx_scope_sync() uses to skip a variable, so a whiteout (no value,
+   * assigned) is carried over. */
   if (filterx_variable_is_message_tied(variable) &&
       !filterx_variable_is_assigned(variable) &&
       variable->value && !filterx_object_is_dirty(variable->value))
@@ -499,7 +500,7 @@ _dup_scope_from_snapshots(FilterXScope *parent, LogMessage *msg, FilterXScopeVar
 
       FilterXObject *value = snapshot->value;
       FilterXGenCounter generation = filterx_variable_is_message_tied(v) ? new_scope->msg->generation : new_scope->generation;
-      filterx_variable_set_value(v, &value, snapshot->assigned, generation);
+      filterx_variable_set_value(v, value ? &value : NULL, snapshot->assigned, generation);
       filterx_object_unref(value);
     }
 
@@ -529,6 +530,45 @@ _layout_from_snapshot_handles(GArray *snapshots)
   return layout;
 }
 
+/* an unset message-tied variable: no value, but something the sync writes
+ * back (see filterx_scope_sync()), so a snapshot has to carry it */
+static inline gboolean
+_variable_is_whiteout(FilterXVariable *variable)
+{
+  return !variable->value && filterx_variable_is_message_tied(variable) && filterx_variable_is_assigned(variable);
+}
+
+/* filterx_scope_foreach_variable_readonly() skips the variables without a
+ * value, whiteouts included, so the ancestors are walked here */
+static void
+_collect_ancestor_variables_for_dup(FilterXScope *self, FilterXScopeDupCollector *collector)
+{
+  GHashTable *already_found = g_hash_table_new(g_direct_hash, g_direct_equal);
+
+  for (FilterXScope *scope = self->parent_scope; scope; scope = scope->parent_scope)
+    {
+      for (guint32 i = 0; i < scope->variables_size; i++)
+        {
+          FilterXVariable *variable = &scope->variables[i];
+
+          if (!variable->variable_type)
+            continue;
+          if (!variable->value && !_variable_is_whiteout(variable))
+            continue;
+          /* NOTE: we validate against @self */
+          if (!_validate_variable(self, variable))
+            continue;
+          if (g_hash_table_contains(already_found, GSIZE_TO_POINTER(variable->handle)))
+            continue;
+
+          _collect_variable_for_dup(variable, collector);
+          g_hash_table_add(already_found, GSIZE_TO_POINTER(variable->handle));
+        }
+    }
+
+  g_hash_table_destroy(already_found);
+}
+
 /* An assignment to a message-tied variable reaches the message at the next
  * syncing pipe, which the duplicate never passes.  So both scopes are
  * synced here, into the duplicate's own clone of the message. */
@@ -550,7 +590,9 @@ filterx_scope_dup(FilterXScope *self, FilterXScopeValueSnapshotFunc snapshot_val
   for (guint32 i = 0; i < self->variables_size; i++)
     {
       FilterXVariable *variable = &self->variables[i];
-      if (!variable->variable_type || !variable->value)
+      if (!variable->variable_type)
+        continue;
+      if (!variable->value && !_variable_is_whiteout(variable))
         continue;
       if (!_validate_variable(self, variable))
         continue;
@@ -567,7 +609,7 @@ filterx_scope_dup(FilterXScope *self, FilterXScopeValueSnapshotFunc snapshot_val
         .user_data = user_data,
         .declared_and_message_tied_only = TRUE,
       };
-      filterx_scope_foreach_variable_readonly(self->parent_scope, _collect_variable_for_dup, &ancestor_collector);
+      _collect_ancestor_variables_for_dup(self, &ancestor_collector);
 
       if (ancestor_collector.snapshots->len > 0)
         {

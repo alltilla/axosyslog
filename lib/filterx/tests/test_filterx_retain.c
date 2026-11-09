@@ -1012,6 +1012,70 @@ _count_variable(FilterXVariable *variable, gpointer user_data)
   return TRUE;
 }
 
+Test(filterx_retain, snapshot_syncs_a_whiteout_into_its_message)
+{
+  LogMessage *msg = filterx_eval_get_context()->msg;
+  log_msg_set_value_by_name_with_type(msg, "snapunset", "to-be-unset", -1, LM_VT_STRING);
+
+  FilterXVariableHandle handle = filterx_map_varname_to_handle("snapunset", FX_VAR_MESSAGE_TIED);
+  FilterXScopeVariableLayout *layout = filterx_scope_variable_layout_new_from_handles(&handle, 1);
+  FilterXScope *scope = filterx_scope_new(NULL, layout);
+  set_libtest_filterx_scope(scope);
+
+  FilterXVariable *v = filterx_scope_register_variable(scope, FX_VAR_MESSAGE_TIED, handle, 0);
+  filterx_scope_unset_variable(scope, v);
+
+  FilterXEvalContext *dup = filterx_eval_context_dup(filterx_eval_get_context());
+
+  /* log_msg_is_value_set() stays TRUE for an unset entry, so look at the
+   * value */
+  NVHandle nv_handle = filterx_variable_get_nv_handle(v);
+  LogMessageValueType type;
+  cr_assert_not_null(log_msg_get_value_if_set_with_type(msg, nv_handle, NULL, &type));
+  cr_assert_null(log_msg_get_value_if_set_with_type(dup->scope->msg, nv_handle, NULL, &type),
+                 "the snapshot did not unset the field in its message");
+
+  FilterXVariable *dv = filterx_scope_lookup_variable(dup->scope, handle, 0);
+  cr_assert_not_null(dv);
+  cr_assert_not(filterx_variable_is_assigned(dv), "the variable of the snapshot is not in sync with its message");
+
+  filterx_eval_context_free_dup(dup);
+  filterx_scope_variable_layout_free(layout);
+}
+
+Test(filterx_retain, snapshot_syncs_the_whiteout_of_an_earlier_block_into_its_message)
+{
+  LogMessage *msg = filterx_eval_get_context()->msg;
+  log_msg_set_value_by_name_with_type(msg, "snapunset", "to-be-unset", -1, LM_VT_STRING);
+
+  /* the earlier block unsets the field; filterx pipes chain their scopes,
+   * so its scope is not synced before the next block runs */
+  FilterXVariableHandle handle = filterx_map_varname_to_handle("snapunset", FX_VAR_MESSAGE_TIED);
+  FilterXScopeVariableLayout *earlier_layout = filterx_scope_variable_layout_new_from_handles(&handle, 1);
+  FilterXScope *earlier_scope = filterx_scope_new(NULL, earlier_layout);
+  filterx_scope_set_message(earlier_scope, msg);
+  FilterXVariable *v = filterx_scope_register_variable(earlier_scope, FX_VAR_MESSAGE_TIED, handle, 0);
+  filterx_scope_unset_variable(earlier_scope, v);
+
+  /* the current block never touches the variable */
+  FilterXScopeVariableLayout *layout = filterx_scope_variable_layout_new_from_handles(NULL, 0);
+  set_libtest_filterx_scope(filterx_scope_new(earlier_scope, layout));
+
+  FilterXEvalContext *dup = filterx_eval_context_dup(filterx_eval_get_context());
+
+  NVHandle nv_handle = filterx_variable_get_nv_handle(v);
+  LogMessageValueType type;
+  cr_assert_not_null(log_msg_get_value_if_set_with_type(msg, nv_handle, NULL, &type));
+  cr_assert_null(log_msg_get_value_if_set_with_type(dup->scope->msg, nv_handle, NULL, &type),
+                 "the snapshot did not unset the field of the earlier block in its message");
+
+  filterx_eval_context_free_dup(dup);
+  set_libtest_filterx_scope(filterx_scope_new(NULL, NULL));
+  filterx_scope_free(earlier_scope);
+  filterx_scope_variable_layout_free(layout);
+  filterx_scope_variable_layout_free(earlier_layout);
+}
+
 Test(filterx_retain, snapshot_skips_message_tied_variables_that_are_in_sync_with_the_message)
 {
   LogMessage *msg = filterx_eval_get_context()->msg;
