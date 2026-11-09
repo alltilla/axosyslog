@@ -370,6 +370,16 @@ Test(filterx_retain, retained_copy_lands_in_the_allocator_in_effect)
   _release_allocator_memory();
 }
 
+Test(filterx_retain, current_allocator_id_follows_the_heap_fallback_of_an_oversized_allocation)
+{
+  _enable_allocator();
+  cr_assert_eq(filterx_eval_current_allocator_id(sizeof(FilterXString)), TEST_ALLOCATOR_ID);
+  cr_assert_eq(filterx_eval_current_allocator_id(FILTERX_ALLOCATOR_MAX_ALLOC_SIZE + 1), FILTERX_ALLOCATOR_ID_HEAP);
+
+  _disable_allocator();
+  cr_assert_eq(filterx_eval_current_allocator_id(sizeof(FilterXString)), FILTERX_ALLOCATOR_ID_HEAP);
+}
+
 /* 4) hibernated: process lifetime singletons, nothing to do */
 Test(filterx_retain, hibernated_object_is_returned_as_is)
 {
