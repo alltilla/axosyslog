@@ -122,27 +122,33 @@ DestinationWorker::disconnect()
   this->batch_writer.reset();
   this->batch_writer_ctx.reset();
 
-  if (!this->write_stream.name().empty())
-    {
-      ::grpc::ClientContext ctx;
-      this->prepare_context(ctx);
-      google::cloud::bigquery::storage::v1::FinalizeWriteStreamRequest finalize_request;
-      google::cloud::bigquery::storage::v1::FinalizeWriteStreamResponse finalize_response;
-      finalize_request.set_name(write_stream.name());
-
-      ::grpc::Status status = this->stub->FinalizeWriteStream(&ctx, finalize_request, &finalize_response);
-      if (!status.ok())
-        {
-          msg_warning("Error finalizing BigQuery write stream", evt_tag_str("error", status.error_message().c_str()),
-                      evt_tag_str("details", status.error_details().c_str()),
-                      log_pipe_location_tag((LogPipe *) this->super->super.owner));
-        }
-
-      this->write_stream.Clear();
-    }
+  this->finalize_write_stream();
 
   this->connected = false;
   syslogng::grpc::DestWorker::disconnect();
+}
+
+void
+DestinationWorker::finalize_write_stream()
+{
+  if (this->write_stream.name().empty())
+    return;
+
+  ::grpc::ClientContext ctx;
+  this->prepare_context(ctx);
+  google::cloud::bigquery::storage::v1::FinalizeWriteStreamRequest finalize_request;
+  google::cloud::bigquery::storage::v1::FinalizeWriteStreamResponse finalize_response;
+  finalize_request.set_name(write_stream.name());
+
+  ::grpc::Status status = this->stub->FinalizeWriteStream(&ctx, finalize_request, &finalize_response);
+  if (!status.ok())
+    {
+      msg_warning("Error finalizing BigQuery write stream", evt_tag_str("error", status.error_message().c_str()),
+                  evt_tag_str("details", status.error_details().c_str()),
+                  log_pipe_location_tag((LogPipe *) this->super->super.owner));
+    }
+
+  this->write_stream.Clear();
 }
 
 void

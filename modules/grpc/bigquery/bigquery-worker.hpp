@@ -68,6 +68,7 @@ protected:
 private:
   std::shared_ptr<::grpc::Channel> create_channel();
   bool construct_write_stream();
+  void finalize_write_stream();
   void open_append_rows_stream();
   void prepare_batch();
   bool should_initiate_flush();
