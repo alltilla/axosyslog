@@ -21,6 +21,7 @@
 # COPYING for details.
 #
 #############################################################################
+import time
 import uuid
 
 from axosyslog_light.common.blocking import wait_until_true
@@ -133,3 +134,31 @@ def test_bigquery_destination_recovers_after_server_stream_restart(config, syslo
     assert bigquery_destination.get_create_count() >= 2
     assert bigquery_destination.get_stream_count() >= 2
     assert syslog_ng.is_process_running()
+
+
+def test_bigquery_destination_idle_reconnect(config, syslog_ng, port_allocator):
+    idle_reconnect_timeout = 1
+    file_source = config.create_file_source(file_name="input.log", flags="no-parse")
+
+    options = {
+        **BIGQUERY_OPTIONS,
+        "batch-lines": 1,
+        "idle-reconnect-timeout": idle_reconnect_timeout,
+    }
+    bigquery_destination = config.create_bigquery_destination(port=port_allocator(), **options)
+    config.create_logpath(statements=[file_source, bigquery_destination])
+
+    bigquery_destination.start_listener()
+    syslog_ng.start(config)
+
+    file_source.write_log("first")
+    assert wait_until_true(lambda: bigquery_destination.get_stats().get("written", 0) == 1)
+
+    time.sleep(2 * idle_reconnect_timeout)
+
+    file_source.write_log("second")
+    assert wait_until_true(lambda: bigquery_destination.get_stats().get("written", 0) == 2)
+    assert bigquery_destination.get_stats()["dropped"] == 0
+    assert bigquery_destination.get_row_count() == 2
+    assert bigquery_destination.get_create_count() == 2
+    assert bigquery_destination.get_finalize_count() == 1
